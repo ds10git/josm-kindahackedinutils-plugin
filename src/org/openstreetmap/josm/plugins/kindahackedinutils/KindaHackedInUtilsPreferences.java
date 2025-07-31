@@ -32,7 +32,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     directionSimple = new JCheckBox(tr("Use {0} as direction for traffic signs on nodes inside a way","forward/backward"), Conf.isSimpleDirection());
     directionNatural = new JCheckBox(tr("Natural direction for traffic signs"), Conf.isNaturalDirection());
     
-    splitWays = new JCheckBox(tr("Split ways at mouse location with keyboard key I"), Conf.isSplitWay());
+    splitWays = new JCheckBox(tr("Split ways at mouse location with keyboard key K"), Conf.isSplitWay());
     createNode = new JCheckBox(tr("Create new node at mouse location with keyboard key B"), Conf.isCreateNode());
     detachEnabled = new JCheckBox(tr("Detach nodes from ways and move them with keyboard key Z"), Conf.isDetachEnabled());
     
