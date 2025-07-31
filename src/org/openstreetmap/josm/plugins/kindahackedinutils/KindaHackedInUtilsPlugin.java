@@ -93,16 +93,19 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private final ImageIcon arrow;
   private final DataSetListener listener;
   private final AngleAction angleAction;
-  private final DetachAction detachAction;
-  
-  private final Shortcut detachShortcut;
+  private final Shortcut angleDegreeShortcut;
+  private final Shortcut drawNodeShortcut;
+  private final Shortcut splitWayShortcut;
 
   public KindaHackedInUtilsPlugin(PluginInformation info) {
     super(info);
     instance = this;
-    detachShortcut = Shortcut.registerShortcut("kindahackedinutils.detach", tr("Detatch nodes"), KeyEvent.VK_Z, Shortcut.DIRECT);
+    drawNodeShortcut = Shortcut.registerShortcut("kindahackedinutils.drawNodeAtMouse", tr("Draw node at mouse location"), KeyEvent.VK_B, Shortcut.DIRECT);
+    splitWayShortcut = Shortcut.registerShortcut("kindahackedinutils.splitWay", tr("Split way at mouse location"), KeyEvent.VK_K, Shortcut.DIRECT);
+    angleDegreeShortcut = Shortcut.registerShortcut("kindahackedinutils.angleDegree", tr("Get heading in degrees"), KeyEvent.VK_H, Shortcut.ALT_SHIFT);
+    
     angleAction = new AngleAction();
-    detachAction = new DetachAction();
+    DetachAction detachAction = new DetachAction();
     arrow = ImageProvider.get("N", ImageSizes.POPUPMENU);
     listener = new DataSetListener() {
       Thread waitForEventEnd;
@@ -281,11 +284,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         public void doKeyReleased(KeyEvent e) {}
         
         @Override
-        public void doKeyPressed(KeyEvent e) {          
-          if(e.getKeyCode() == detachShortcut.getKeyStroke().getKeyCode() && (e.getModifiersEx() & KeyEvent.SHIFT_DOWN_MASK) == KeyEvent.SHIFT_DOWN_MASK && (e.getModifiersEx() & KeyEvent.ALT_DOWN_MASK) == KeyEvent.ALT_DOWN_MASK) {
+        public void doKeyPressed(KeyEvent e) {
+          if(angleDegreeShortcut.isEvent(e)) {
             angleAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME));
           }
-          else if(e.getKeyCode() == KeyEvent.VK_B && e.getModifiersEx() == 0) {
+          else if(drawNodeShortcut.isEvent(e)) {
             if(Conf.isCreateNode()) {
               MainApplication.getMenu().unselectAll.actionPerformed(null);
   
@@ -296,7 +299,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 2, false, MouseEvent.BUTTON1));
             }
           }
-          else if(e.getKeyCode() == KeyEvent.VK_I && e.getModifiersEx() == 0) {
+          else if(splitWayShortcut.isEvent(e)) {
             if(Conf.isSplitWay()) {
               MainApplication.getMenu().unselectAll.actionPerformed(null);
   
@@ -464,7 +467,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   class DetachAction extends JosmAction {
     public DetachAction() {
       super(tr("Detach nodes from ways and move them"), /* ICON() */ "preferences/detach", tr("Detach nodes from ways and move them"),
-          detachShortcut, false);
+          Shortcut.registerShortcut("kindahackedinutils.detach", tr("Detatch nodes"), KeyEvent.VK_Z, Shortcut.DIRECT), false);
     }
     
     @Override
@@ -684,10 +687,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 String key = "direction";
                 
                 String simpleDirection = null;
-                  Object[] ways = n.referrers(Way.class).toArray();
+                  Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
                   
-                  if(ways.length == 1) {
-                    Way way = (Way)ways[0];
+                  int wayIndex = 0;
+                  
+                  if((ways.length == 2 && Objects.equals(n.get("highway"), "traffic_signals"))) {
+                    for(int i = 0; i < ways.length; i++) {
+                      if(n == ways[i].getNode(0)) {
+                        wayIndex = i;
+                        break;
+                      }
+                    }
+                  }
+                  
+                  if(ways.length == 1 || (ways.length == 2 && Objects.equals(n.get("highway"), "traffic_signals"))) {
+                    Way way = (Way)ways[wayIndex];
                     
                       Node prev = null;
                       Node next = null;
