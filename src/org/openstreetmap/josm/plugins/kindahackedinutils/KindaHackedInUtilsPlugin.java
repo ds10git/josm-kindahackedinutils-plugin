@@ -15,7 +15,6 @@ import java.awt.event.AWTEventListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Area;
 import java.util.Collection;
@@ -39,6 +38,8 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.command.AddCommand;
@@ -58,6 +59,7 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.TagMap;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.data.osm.WaySegment;
 import org.openstreetmap.josm.data.osm.event.AbstractDatasetChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataSetListener;
@@ -123,16 +125,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 try {
                   Thread.sleep(50);
                 } catch (InterruptedException e) {
-                  // TODO Auto-generated catch block
-                  e.printStackTrace();
+                  // ignore
                 }
                 
                 while(!Objects.equals(lastEvent, previouseEvent)) {
                   try {
                     Thread.sleep(100);
                   } catch (InterruptedException e) {
-                    // TODO Auto-generated catch block
-                    e.printStackTrace();
+                    // ignore
                   }
                   previouseEvent = lastEvent;
                 }
@@ -318,7 +318,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     if(list.size() == 1 && list.get(0) instanceof Node) {
       final Node n = (Node)list.get(0);
       
-      if(n.hasKey("traffic_sign") && ((ignoreExistingValue && wayPointedAt != null) || !n.hasKey("direction") || Objects.equals(n.get("direction"),"forward") || Objects.equals(n.get("direction"),"backward"))) {
+      if((n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"))) && ((ignoreExistingValue && wayPointedAt != null) || !n.hasKey("direction") || Objects.equals(n.get("direction"),"forward") || Objects.equals(n.get("direction"),"backward"))) {
         Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
         
         LinkedList<Way> highways = new LinkedList<>();
@@ -332,18 +332,26 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         JPopupMenu menu = new JPopupMenu();
         
         if(!highways.isEmpty()) {
-          MouseAdapter ma = new MouseAdapter() {
-            public void mouseEntered(MouseEvent e) {
-              if(e.getComponent() instanceof WayMenuItem) {
-                ((WayMenuItem)e.getComponent()).way.setHighlighted(true);
-              }
-            };
+          ChangeListener cl = new ChangeListener() {
+            WayMenuItem lastItem;
             
-            public void mouseExited(MouseEvent e) {
-              if(e.getComponent() instanceof WayMenuItem) {
-                ((WayMenuItem)e.getComponent()).way.setHighlighted(false);
+            @Override
+            public void stateChanged(ChangeEvent e) {
+              if(e.getSource() instanceof WayMenuItem) {
+                if(Objects.equals(lastItem, e.getSource())) {
+                  lastItem.way.setHighlighted(false);
+                }
+                else {
+                  ((WayMenuItem)e.getSource()).way.setHighlighted(true);
+                }
+                
+                lastItem = (WayMenuItem)e.getSource();
               }
-            };
+              else {
+                lastItem.way.setHighlighted(false);
+                lastItem = null;
+              }
+            }
           };
           
           ActionListener a = new ActionListener() {
@@ -389,7 +397,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             
             WayMenuItem item = new WayMenuItem(w, d, arrow, nodePos);
             item.addActionListener(a);
-            item.addMouseListener(ma);
+            item.addChangeListener(cl);
             
             if(Objects.equals(wayPointedAt, w) || singleWay) {
               a.actionPerformed(new ActionEvent(item, 0, null));
@@ -398,11 +406,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             
             menu.add(item);
           }
-          System.out.println(sameDirection + " "+ highways.size());
+          
           if(highways.size() == 2 && sameDirection && (Objects.equals(direction, "forward") || Objects.equals(direction, "backward"))) {
             for(int i = 0; i < 2; i++) {
               WayMenuItem item = (WayMenuItem)menu.getComponent(i);
-              System.out.println(" " + direction + " "+ item.nodePos);    
+                 
               if((Objects.equals(direction, "forward") && Objects.equals(item.nodePos, "firstNode")) ||
                   (Objects.equals(direction, "backward") && Objects.equals(item.nodePos, "lastNode"))) {
                 item.getActionListeners()[0].actionPerformed(new ActionEvent(item, 0, null));
@@ -415,14 +423,17 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             return false;
           }
         }
-        else if(!ignoreExistingValue && ways.length == 1 && ((objectSpecificDirection && !n.hasKey("traffic_sign:direction")) || !objectSpecificDirection && !n.hasKey("direction"))) {
+        else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction")) || !objectSpecificDirection && !n.hasKey("traffic_sign") && !n.hasKey("direction") ||
+            (!n.hasKey("direction") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))))) {
+          final Collection<WaySegment> currentHighlightedSegments = MainApplication.getLayerManager().getActiveData().getHighlightedWaySegments();
+          
           ActionListener a = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
               if(e.getSource() instanceof JMenuItem) {
                 final HashSet<Command> cmds = new HashSet<>(2);
                 
-                if(objectSpecificDirection) {
+                if(objectSpecificDirection && n.hasKey("traffic_sign")) {
                   cmds.add(new ChangePropertyCommand(n, "traffic_sign:direction", ((JMenuItem)e.getSource()).getName()));
                   cmds.add(new ChangePropertyCommand(n, "direction", null));
                 }
@@ -432,20 +443,59 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 }
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
-
+                MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(currentHighlightedSegments);
               }
             }
           };
           
-          JMenuItem forward = new JMenuItem("↑ " + tr("forward"));
+          AtomicReference<WaySegment> forwardSegment = new AtomicReference<WaySegment>();
+          AtomicReference<WaySegment> backwardSegment = new AtomicReference<WaySegment>();
+          
+          for(int i = 1; i < ways[0].getNodesCount(); i++) {
+            if(ways[0].getNode(i) == n) {
+              forwardSegment.set(new WaySegment(ways[0], i));
+              backwardSegment.set(new WaySegment(ways[0], i-1));
+              break;
+            }
+          }
+            
+          final JMenuItem forward = new JMenuItem("↑ " + tr("forward"));
           forward.setName("forward");
           forward.addActionListener(a);
           menu.add(forward);
           
-          JMenuItem backward = new JMenuItem("↓ " + tr("backward"));
+          final JMenuItem backward = new JMenuItem("↓ " + tr("backward"));
           backward.setName("backward");
           backward.addActionListener(a);
           menu.add(backward);
+          
+          ChangeListener cl = new ChangeListener() {
+            JMenuItem lastItem;
+            
+            @Override
+            public void stateChanged(ChangeEvent e) {
+              if(e.getSource() instanceof JMenuItem) {
+                if(Objects.equals(lastItem, e.getSource())) {
+                  MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(currentHighlightedSegments);
+                }
+                else if(Objects.equals(e.getSource(), forward)){
+                  MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(forwardSegment.get()));
+                }
+                else if(Objects.equals(e.getSource(), backward)){
+                  MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(backwardSegment.get()));
+                }
+                
+                lastItem = (JMenuItem)e.getSource();
+              }
+              else {
+                lastItem = null;
+                MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(currentHighlightedSegments);
+              }
+            }
+          };
+          
+          forward.addChangeListener(cl);
+          backward.addChangeListener(cl);
         }
         
         if(menu.getComponentCount() > 0) {
@@ -700,8 +750,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     }
                   }
                   
-                  if(ways.length == 1 || (ways.length == 2 && Objects.equals(n.get("highway"), "traffic_signals"))) {
-                    Way way = (Way)ways[wayIndex];
+                  if(ways.length == 1 || (ways.length == 2 && !n.hasKey("traffic_sign") && (Objects.equals(n.get("highway"), "traffic_signals") ||
+                      Objects.equals(n.get("highway"), "give_way") || Objects.equals(n.get("highway"), "stop")))) {
+                    Way way = ways[wayIndex];
                     
                       Node prev = null;
                       Node next = null;
@@ -743,12 +794,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       }
                   }
                   
+                  LinkedList<Command> cmdList = new LinkedList<>();
+                  
                   if(simpleDirection != null) {
-                    if(n.hasKey("traffic_sign") && (objectSpecificDirection || 
+                    if(!n.hasKey("traffic_sign") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))) {
+                      angle.set(simpleDirection);
+                    }
+                    else if(n.hasKey("traffic_sign") && (objectSpecificDirection || 
                         (Conf.isSimpleDirection() &&
                             !Objects.equals(ACTION_NAME, e.getActionCommand())))) {
                       if(objectSpecificDirection) {
                         key = "traffic_sign:direction";
+                        cmdList.add(new ChangePropertyCommand(n, "direction", null));
+                      }
+                      else {
+                        cmdList.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
                       }
                       
                       angle.set(simpleDirection);
@@ -763,7 +823,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     Config.getPref().putBoolean("kindahackedinutils.angleInfoNotShown", false);
                   }
                 
-                  UndoRedoHandler.getInstance().add(new ChangePropertyCommand(n, key, angle.get())); 
+                  cmdList.add(new ChangePropertyCommand(n, key, angle.get()));
+                  
+                  UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction", cmdList)); 
                 }
             });
           }catch(NumberFormatException nfe) {
