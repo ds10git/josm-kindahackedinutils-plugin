@@ -40,6 +40,7 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
 import org.openstreetmap.josm.actions.JosmAction;
+import org.openstreetmap.josm.actions.mapmode.SplitMode;
 import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.ChangeNodesCommand;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
@@ -66,6 +67,7 @@ import org.openstreetmap.josm.data.osm.event.PrimitivesRemovedEvent;
 import org.openstreetmap.josm.data.osm.event.RelationMembersChangedEvent;
 import org.openstreetmap.josm.data.osm.event.TagsChangedEvent;
 import org.openstreetmap.josm.data.osm.event.WayNodesChangedEvent;
+import org.openstreetmap.josm.gui.IconToggleButton;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.gui.MapFrame;
@@ -96,6 +98,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private final Shortcut angleDegreeShortcut;
   private final Shortcut drawNodeShortcut;
   private final Shortcut splitWayShortcut;
+  private SplitMode splitMode;
 
   public KindaHackedInUtilsPlugin(PluginInformation info) {
     super(info);
@@ -301,6 +304,15 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   
   @Override
   public void mapFrameInitialized(MapFrame oldFrame, final MapFrame newFrame) {
+    if(splitMode == null) {
+      for(IconToggleButton b : MainApplication.getMap().allMapModeButtons) {
+        if(b.getAction() instanceof SplitMode) {
+          splitMode = (SplitMode)b.getAction();
+          break;
+        }
+      }
+    }
+    
     if(oldFrame != null) {
       oldFrame.getActionMap().remove("kindahackedinutils.addHeading");
     }
@@ -369,13 +381,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             }
           }
           else if(splitWayShortcut.isEvent(e)) {
-            if(Conf.isSplitWay()) {
+            if(Conf.isSplitWay() && splitMode != null) {
               MainApplication.getMenu().unselectAll.actionPerformed(null);
   
               Point b = MainApplication.getMap().mapView.getMousePosition(true);
               
               if(b != null) {
-                MainApplication.getMap().mapModeSplit.mousePressed(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
+                splitMode.mousePressed(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
               }
             }
           }
@@ -401,6 +413,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         JPopupMenu menu = new JPopupMenu();
         
         if(!highways.isEmpty()) {
+          System.out.println("HIER2");
           ChangeListener cl = new ChangeListener() {
             WayMenuItem lastItem;
             
@@ -553,7 +566,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             return false;
           }
         }
-        else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction")) || !objectSpecificDirection && !n.hasKey("traffic_sign") && !n.hasKey("direction") ||
+        else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction")) || (!objectSpecificDirection && n.hasKey("traffic_sign") && !n.hasKey("direction")) ||
             (!n.hasKey("direction") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))))) {
           ActionListener a = new ActionListener() {
             @Override
@@ -861,7 +874,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 int test = (int)Math.round(Utils.toDegrees(n.getEastNorth().heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
                 int a = test;
                 
-                if(Conf.isNaturalDirection() && n.hasKey("traffic_sign")) {
+                if(Conf.isNaturalDirection() && (isSpecialDirectionNode(n) || Objects.equals("traffic_signals", n.get("highway")))) {
                   a += 180;
                   
                   if(a >= 360) {
@@ -997,10 +1010,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
     
     if(mouseHeading >= lB && mouseHeading <= uB || (lB > uB && (mouseHeading < uB || mouseHeading > lB))) {
-      return "forward";
+      return !Conf.isNaturalDirection() && Conf.iOppositeSimpleDirectionEnabled() ? "backward" : "forward";
     }
     else {
-      return "backward";
+      return !Conf.isNaturalDirection() && Conf.iOppositeSimpleDirectionEnabled() ? "forward" : "backward";
     }
   }
   
