@@ -7,7 +7,6 @@ import java.awt.AWTEvent;
 import java.awt.Component;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.MouseInfo;
 import java.awt.Point;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -23,7 +22,6 @@ import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -50,8 +48,7 @@ import org.openstreetmap.josm.command.RemoveNodesCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.coor.EastNorth;
-import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.data.osm.BBox;
+import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
@@ -94,6 +91,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private static KindaHackedInUtilsPlugin instance;
   private final ImageIcon arrow;
   private final DataSetListener listener;
+  private final DataSelectionListener selectionListener;
   private final AngleAction angleAction;
   private final Shortcut angleDegreeShortcut;
   private final Shortcut drawNodeShortcut;
@@ -110,13 +108,17 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     DetachAction detachAction = new DetachAction();
     arrow = ImageProvider.get("N", ImageSizes.POPUPMENU);
     listener = new DataSetListener() {
-      Thread waitForEventEnd;
-      TagsChangedEvent lastEvent;
-      TagsChangedEvent previouseEvent;
+      private Thread waitForEventEnd;
+      private TagsChangedEvent lastEvent;
+      private TagsChangedEvent previouseEvent;
+      
+      private Way lastChanged;
+      private long lastChangedEvent;
+      private Thread waitForWayEventEnd;
       
       @Override
       public void tagsChanged(TagsChangedEvent event) {
-        if(event.getPrimitives().size() == 1) {
+        if(Conf.isDirectionEnabled() && event.getPrimitives().size() == 1) {
           lastEvent = event;
           
           if(waitForEventEnd == null || !waitForEventEnd.isAlive()) {
@@ -142,7 +144,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 lastEvent = null;
                 previouseEvent = null;
 
-                SwingUtilities.invokeLater(() -> changeDirectionForTrafficSign(use.getPrimitives(), false, null, Conf.isObjectSpecificDirection()));
+                if(use != null) {
+                  if(use.getPrimitive() instanceof Node) {
+                    SwingUtilities.invokeLater(() -> changeDirectionForTrafficSign(use.getPrimitives(), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled()));
+                  }
+                  else if(use.getPrimitive() instanceof Way) {
+                    Way w = (Way)use.getPrimitive();
+                    for(int i = 0; i < w.getNodesCount(); i++) {
+                      final Node n = w.getNode(i);
+                      
+                      if(isSpecialDirectionNode(n) && n.referrers(Way.class).count() > 1) {
+                        SwingUtilities.invokeLater(() -> changeDirectionForTrafficSign(Collections.singleton(n), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled()));
+                      }
+                    }
+                  }
+                }
               };
             };
             waitForEventEnd.start();
@@ -157,7 +173,46 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       public void primitivesRemoved(PrimitivesRemovedEvent event) {}
       
       @Override
-      public void primitivesAdded(PrimitivesAddedEvent event) {}
+      public synchronized void primitivesAdded(final PrimitivesAddedEvent event) {
+        if(Conf.isDirectionEnabled() && (waitForWayEventEnd == null || !waitForWayEventEnd.isAlive())) {
+          waitForEventEnd = new Thread() {
+            public void run() {
+              try {
+                Thread.sleep(50);
+              } catch (InterruptedException e) {
+                // ignore
+              }
+              
+              if(lastChanged != null && System.currentTimeMillis() - lastChangedEvent < 500 && event.getPrimitives().size() == 1) {
+                Optional<? extends OsmPrimitive> test = event.getPrimitives().stream().filter(w->w instanceof Way).findFirst();
+                
+                if(test.isPresent()) {
+                  Way newWay = (Way)test.get();
+                  
+                  AtomicReference<Node> changed = new AtomicReference<>();
+                  
+                  if(newWay.getNode(0) == lastChanged.getNode(0) ||
+                      newWay.getNode(0) == lastChanged.getNode(lastChanged.getNodesCount()-1)) {
+                    changed.set(newWay.getNode(0));
+                  }
+                  else if(newWay.getNode(newWay.getNodesCount()-1) == lastChanged.getNode(0) ||
+                      newWay.getNode(newWay.getNodesCount()-1) == lastChanged.getNode(lastChanged.getNodesCount()-1)) {
+                    changed.set(newWay.getNode(1));
+                  }
+                  
+                  if(changed.get() != null) {
+                    SwingUtilities.invokeLater(() -> changeDirectionForTrafficSign(Collections.singletonList(changed.get()), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled()));
+                  }
+                }
+              }
+              
+              lastChangedEvent = 0;
+              lastChanged = null;
+            }
+          };
+          waitForEventEnd.start();
+        }
+      }
       
       @Override
       public void otherDatasetChange(AbstractDatasetChangedEvent event) {}
@@ -169,7 +224,18 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       public void dataChanged(DataChangedEvent event) {}              
       
       @Override
-      public void wayNodesChanged(WayNodesChangedEvent event) {}
+      public void wayNodesChanged(WayNodesChangedEvent event) {
+        if(event.getPrimitives().size() == 1) {
+          lastChanged = event.getChangedWay();
+          lastChangedEvent = System.currentTimeMillis();
+        }
+      }
+    };
+    
+    selectionListener = e -> {
+      if(e.getSelection().size() == 1) {
+        changeDirectionForTrafficSign(MainApplication.getLayerManager().getActiveDataSet().getSelected(), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled());
+      }
     };
     
     JMenu toolsMenu = MainApplication.getMenu().moreToolsMenu;
@@ -246,10 +312,12 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         public void activeOrEditLayerChanged(ActiveLayerChangeEvent e) {
           if(e.getPreviousDataSet() != null) {
             e.getPreviousDataSet().removeDataSetListener(listener);
+            e.getPreviousDataSet().removeSelectionListener(selectionListener);
           }
           
           if(MainApplication.getLayerManager().getEditDataSet() != null) {
             MainApplication.getLayerManager().getEditDataSet().addDataSetListener(listener);
+            MainApplication.getLayerManager().getActiveData().addSelectionListener(selectionListener);
           }
         }
       });
@@ -292,21 +360,23 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             if(Conf.isCreateNode()) {
               MainApplication.getMenu().unselectAll.actionPerformed(null);
   
-              Point b = MouseInfo.getPointerInfo().getLocation();
-              SwingUtilities.convertPointFromScreen(b, MainApplication.getMap());
+              Point b = MainApplication.getMap().mapView.getMousePosition(true);
               
-              MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
-              MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 2, false, MouseEvent.BUTTON1));
+              if(b != null) {
+                MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
+                MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 2, false, MouseEvent.BUTTON1));
+              }
             }
           }
           else if(splitWayShortcut.isEvent(e)) {
             if(Conf.isSplitWay()) {
               MainApplication.getMenu().unselectAll.actionPerformed(null);
   
-              Point b = MouseInfo.getPointerInfo().getLocation();
-              SwingUtilities.convertPointFromScreen(b, MainApplication.getMap());
-  
-              MainApplication.getMap().mapModeSplit.mousePressed(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
+              Point b = MainApplication.getMap().mapView.getMousePosition(true);
+              
+              if(b != null) {
+                MainApplication.getMap().mapModeSplit.mousePressed(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
+              }
             }
           }
         }
@@ -314,17 +384,16 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   	}
   }
   
-  private synchronized boolean changeDirectionForTrafficSign(List<? extends OsmPrimitive> list, boolean ignoreExistingValue, Way wayPointedAt, final boolean objectSpecificDirection) {
-    if(list.size() == 1 && list.get(0) instanceof Node) {
-      final Node n = (Node)list.get(0);
+  private synchronized boolean changeDirectionForTrafficSign(Collection<? extends OsmPrimitive> list, boolean ignoreExistingValue, Way wayPointedAt, final boolean objectSpecificDirection, boolean autoSet) {
+    if(list.size() == 1 && list.stream().findFirst().get() instanceof Node) {
+      final Node n = (Node)list.stream().findFirst().get();
+      Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
       
-      if((n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"))) && ((ignoreExistingValue && wayPointedAt != null) || !n.hasKey("direction") || Objects.equals(n.get("direction"),"forward") || Objects.equals(n.get("direction"),"backward"))) {
-        Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
-        
+      if(isSpecialDirectionNode(n) && ((ignoreExistingValue && wayPointedAt != null) || !n.hasKey("direction") || Objects.equals(n.get("direction"),"forward") || Objects.equals(n.get("direction"),"backward"))) {
         LinkedList<Way> highways = new LinkedList<>();
         
         for(Way o : ways) {
-          if(o.hasKey("highway") && (o.isFirstLastNode(n))) {
+          if(o.hasKey("highway") && (o.isFirstLastNode(n) || ways.length > 1)) {
             highways.add(o);
           }
         }
@@ -339,13 +408,25 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             public void stateChanged(ChangeEvent e) {
               if(e.getSource() instanceof WayMenuItem) {
                 if(Objects.equals(lastItem, e.getSource())) {
-                  lastItem.way.setHighlighted(false);
+                  if(lastItem.waySegment != null) {
+                    MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
+                  }
+                  else {
+                    lastItem.way.setHighlighted(false);
+                  }
+                  
+                  lastItem = null;
                 }
                 else {
-                  ((WayMenuItem)e.getSource()).way.setHighlighted(true);
+                  lastItem = (WayMenuItem)e.getSource();
+                  
+                  if(lastItem.waySegment != null) {
+                    MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(lastItem.waySegment));
+                  }
+                  else {
+                    lastItem.way.setHighlighted(true);
+                  }
                 }
-                
-                lastItem = (WayMenuItem)e.getSource();
               }
               else {
                 lastItem.way.setHighlighted(false);
@@ -366,6 +447,12 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
                 
                 ((WayMenuItem)e.getSource()).way.setHighlighted(false);
+                
+                 if(wayPointedAt != null) {
+                    SwingUtilities.invokeLater(() -> wayPointedAt.setHighlighted(true));
+                 }
+                
+                MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
               }
             }
           };
@@ -376,6 +463,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           String lastNodePos = null;
           String direction = n.hasKey("direction") ? n.get("direction") : n.hasKey("traffic_sign:direction") ? n.get("traffic_sgin:direction") : null;
           
+          WaySegment segmentPointed = null;
+          
+          Point p = MainApplication.getMap().mapView.getMousePosition(true);
+          
+          if(p != null) {
+            segmentPointed = MainApplication.getMap().mapView.getNearestWaySegment(p, o -> o.hasKey("highway"));
+          }
+
           for(Way w : highways) {
             int d = -1;
             String nodePos = null;
@@ -388,30 +483,65 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               d = (int)Utils.toDegrees(w.getNode(w.getNodesCount()-2).getEastNorth().heading(n.getEastNorth()));
               nodePos = "lastNode";
             }
-            
-            if(!Objects.equals(lastNodePos, nodePos)) {
-              sameDirection = true;
+            else {
+              for(int i = 1; i < w.getNodesCount()-1; i++) {
+                if(n == w.getNode(i)) {
+                  Node prev = w.getNode(i-1);
+                  Node next = w.getNode(i+1);
+                  
+                  int d1 = (int)Utils.toDegrees(next.getEastNorth().heading(n.getEastNorth()));
+                  int d2 = (int)Utils.toDegrees(prev.getEastNorth().heading(n.getEastNorth()));
+                  
+                  WayMenuItem item = new WayMenuItem(w, d1, arrow, "moddleNode");
+                  item.waySegment = new WaySegment(w, i);
+                  item.addActionListener(a);
+                  item.addChangeListener(cl);
+                  menu.add(item);
+                  
+                  if(autoSet && segmentPointed != null && w.isHighlighted() && segmentPointed.getWay() == w && segmentPointed.getFirstNode() == n) {
+                    a.actionPerformed(new ActionEvent(item, 0, null));
+                    return true;
+                  }
+                  
+                  item = new WayMenuItem(w, d2, arrow, nodePos);
+                  item.waySegment = new WaySegment(w, i-1);
+                  item.addActionListener(a);
+                  item.addChangeListener(cl);
+                  menu.add(item);
+
+                  if(autoSet && segmentPointed != null && w.isHighlighted() && segmentPointed.getWay() == w && segmentPointed.getSecondNode() == n) {
+                    a.actionPerformed(new ActionEvent(item, 0, null));
+                    return true;
+                  }
+                }
+              }
             }
             
-            lastNodePos = nodePos;
-            
-            WayMenuItem item = new WayMenuItem(w, d, arrow, nodePos);
-            item.addActionListener(a);
-            item.addChangeListener(cl);
-            
-            if(Objects.equals(wayPointedAt, w) || singleWay) {
-              a.actionPerformed(new ActionEvent(item, 0, null));
-              return true;
+            if(d != -1) {
+              if(!Objects.equals(lastNodePos, nodePos)) {
+                sameDirection = true;
+              }
+              
+              lastNodePos = nodePos;
+              
+              WayMenuItem item = new WayMenuItem(w, d, arrow, nodePos);
+              item.addActionListener(a);
+              item.addChangeListener(cl);
+              
+              if(autoSet && (Objects.equals(wayPointedAt, w) || singleWay)) {
+                a.actionPerformed(new ActionEvent(item, 0, null));
+                return true;
+              }
+              
+              menu.add(item);
             }
-            
-            menu.add(item);
           }
           
           if(highways.size() == 2 && sameDirection && (Objects.equals(direction, "forward") || Objects.equals(direction, "backward"))) {
             for(int i = 0; i < 2; i++) {
               WayMenuItem item = (WayMenuItem)menu.getComponent(i);
                  
-              if((Objects.equals(direction, "forward") && Objects.equals(item.nodePos, "firstNode")) ||
+              if(autoSet && (Objects.equals(direction, "forward") && Objects.equals(item.nodePos, "firstNode")) ||
                   (Objects.equals(direction, "backward") && Objects.equals(item.nodePos, "lastNode"))) {
                 item.getActionListeners()[0].actionPerformed(new ActionEvent(item, 0, null));
                 return true;
@@ -425,8 +555,6 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction")) || !objectSpecificDirection && !n.hasKey("traffic_sign") && !n.hasKey("direction") ||
             (!n.hasKey("direction") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))))) {
-          final Collection<WaySegment> currentHighlightedSegments = MainApplication.getLayerManager().getActiveData().getHighlightedWaySegments();
-          
           ActionListener a = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -443,7 +571,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 }
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
-                MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(currentHighlightedSegments);
+                MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
+                
+                if(wayPointedAt != null) {
+                  SwingUtilities.invokeLater(() -> wayPointedAt.setHighlighted(true));
+               }
               }
             }
           };
@@ -476,20 +608,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             public void stateChanged(ChangeEvent e) {
               if(e.getSource() instanceof JMenuItem) {
                 if(Objects.equals(lastItem, e.getSource())) {
-                  MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(currentHighlightedSegments);
+                  MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
+                  lastItem = null;
                 }
                 else if(Objects.equals(e.getSource(), forward)){
                   MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(forwardSegment.get()));
+                  lastItem = (JMenuItem)e.getSource();
                 }
                 else if(Objects.equals(e.getSource(), backward)){
                   MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(backwardSegment.get()));
+                  lastItem = (JMenuItem)e.getSource();
                 }
-                
-                lastItem = (JMenuItem)e.getSource();
               }
               else {
                 lastItem = null;
-                MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(currentHighlightedSegments);
+                MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
               }
             }
           };
@@ -498,7 +631,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           backward.addChangeListener(cl);
         }
         
-        if(menu.getComponentCount() > 0) {
+        if(Conf.isShowPopupEnabled() && menu.getComponentCount() > 0) {
           Point p = MainApplication.getMap().mapView.getPoint(n.getEastNorth());
           
           menu.show(MainApplication.getMap().mapView, p.x, p.y);
@@ -508,6 +641,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
     
     return false;
+  }
+  
+  private static final boolean isSpecialDirectionNode(Node n) {
+    return n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"));
   }
   
   public static final KindaHackedInUtilsPlugin getInstance() {
@@ -711,16 +848,16 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             final boolean objectSpecificDirection = Conf.isObjectSpecificDirection();
             
             nodes.forEach(n -> {
-              Point p = MouseInfo.getPointerInfo().getLocation();
-              SwingUtilities.convertPointFromScreen(p, MainApplication.getMap().mapView);
+              Point p = MainApplication.getMap().mapView.getMousePosition(true);//MouseInfo.getPointerInfo().getLocation();
               
+              if(p != null) {
               Way pointedTo = MainApplication.getMap().mapView.getNearestWay(p, OsmPrimitive::isSelectable);
               
               if(pointedTo != null && !pointedTo.isHighlighted()) {
                 pointedTo = null;
               }
               
-              if(!changeDirectionForTrafficSign(Collections.singletonList(n), true, pointedTo, objectSpecificDirection)) {
+              if(!changeDirectionForTrafficSign(Collections.singletonList(n), true, pointedTo, objectSpecificDirection, true)) {
                 int test = (int)Math.round(Utils.toDegrees(n.getEastNorth().heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
                 int a = test;
                 
@@ -773,13 +910,19 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       }
                       
                       if(pointedTo != null && pointedTo.containsNode(n) && next != null && prev != null) {
+                        WaySegment segmentPointed = MainApplication.getMap().mapView.getNearestWaySegment(p, o -> o.hasKey("highway"));
+                        
+                        if(segmentPointed != null && way.isHighlighted() && segmentPointed.getWay() == way && segmentPointed.getSecondNode() == n) {
+                          next = null;
+                        }
+                        /*
                         LatLon mousePoint = MainApplication.getMap().mapView.getLatLon(p.x, p.y);
                         BBox prevBox = n.getBBox();
                         prevBox.add(prev.getBBox());
 
                         if(prevBox.contains(mousePoint)) {
                           next = null;
-                        }
+                        }*/
                       }
                       
                       if(next == null) {
@@ -825,8 +968,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                   cmdList.add(new ChangePropertyCommand(n, key, angle.get()));
                   
-                  UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction", cmdList)); 
+                  UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction", cmdList));
+                  
+                  if(pointedTo != null) {
+                    final Way toHighlight = pointedTo;
+                    SwingUtilities.invokeLater(() -> toHighlight.setHighlighted(true));
+                  }
                 }
+              }
             });
           }catch(NumberFormatException nfe) {
             nfe.printStackTrace();
@@ -1138,6 +1287,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   
   private static final class WayMenuItem extends JMenuItem {
     private Way way;
+    private WaySegment waySegment;
     private String nodePos;
     
     public WayMenuItem(Way way, int heading, ImageIcon arrow, String nodePos) {

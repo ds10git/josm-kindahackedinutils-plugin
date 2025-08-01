@@ -19,6 +19,9 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   private JCheckBox directionObjectSpecific;
   private JCheckBox directionSimple;
   private JCheckBox directionNatural;
+  private JCheckBox directionAutoSet;
+  private JCheckBox directionShowPopup;
+  
   private JCheckBox toFront;
   private JCheckBox splitWays;
   private JCheckBox createNode;
@@ -31,6 +34,8 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     directionObjectSpecific = new JCheckBox(tr("Use key {0} for traffic signs on nodes inside a way","traffic_sign:direction"), Conf.isObjectSpecificDirection());
     directionSimple = new JCheckBox(tr("Use {0} as direction for traffic signs on nodes inside a way","forward/backward"), Conf.isSimpleDirection());
     directionNatural = new JCheckBox(tr("Natural direction for traffic signs"), Conf.isNaturalDirection());
+    directionAutoSet = new JCheckBox(tr("Automatically set direction value to degrees on possible ambiguous traffic sign nodes"), Conf.isAutoSetEnabled());
+    directionShowPopup = new JCheckBox(tr("Show popup with possible degree values for ambiguous traffic sign nodes"), Conf.isShowPopupEnabled());
     
     splitWays = new JCheckBox(tr("Split ways at mouse location with keyboard key K"), Conf.isSplitWay());
     createNode = new JCheckBox(tr("Create new node at mouse location with keyboard key B"), Conf.isCreateNode());
@@ -46,6 +51,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
       directionObjectSpecific.setEnabled(e.getStateChange() == ItemEvent.SELECTED);
       directionSimple.setEnabled(directionObjectSpecific.isEnabled() && !directionObjectSpecific.isSelected());
       directionNatural.setEnabled(directionObjectSpecific.isEnabled());
+      directionAutoSet.setEnabled(directionObjectSpecific.isEnabled());
     });
     
     directionObjectSpecific.addItemListener(e -> {
@@ -72,8 +78,12 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     p.add(directionSimple, gc);
     gc.gridy = 8;
     p.add(directionNatural, gc);
+    gc.gridy = 9;
+    p.add(directionAutoSet, gc);
+    gc.gridy = 10;
+    p.add(directionShowPopup, gc);
     
-    p.add(GBC.glue(0, 10), GBC.std(0, 9).fill());
+    p.add(GBC.glue(0, 10), GBC.std(0, 11).fill());
     
     createPreferenceTabWithScrollPane(gui, p);
   }
@@ -88,6 +98,8 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     Conf.setObjectSpecificDirection(directionObjectSpecific.isSelected());
     Conf.setSimpleDirection(directionSimple.isSelected());
     Conf.setNaturalDirection(directionNatural.isSelected());
+    Conf.setAutoSetEnabled(directionAutoSet.isSelected());
+    Conf.setShowPopupEnabled(directionShowPopup.isSelected());
     
     return false;
   }

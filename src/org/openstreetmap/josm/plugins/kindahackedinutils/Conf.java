@@ -7,6 +7,8 @@ public class Conf {
   static final String DIRECTION_OBJECT_SPECIFIC = "kindahackedinutils.objectSpecificDirection";
   static final String DIRECTION_SIMPLE = "kindahackedinutils.simpleDirection";
   static final String DIRECTION_NATURAL = "kindahackedinutils.naturalDirection";
+  static final String DIRECTION_AUTO_SET = "kindahackedinutils.autoSet";
+  static final String DIRECTION_SHOW_POPUP = "kindahackedinutils.showPopup";
   
   static final String CREATE_NODE = "kindahackedinutils.createNode";
   static final String SPLIT_WAY = "kindahackedinutils.splitWay";
@@ -76,6 +78,22 @@ public class Conf {
   
   static void setDetachEnabled(boolean value) {
     Config.getPref().putBoolean(DETACH_ENABLED, value);
+  }
+  
+  public static boolean isAutoSetEnabled() {
+    return Config.getPref().getBoolean(DIRECTION_AUTO_SET, true);
+  }
+  
+  static void setAutoSetEnabled(boolean value) {
+    Config.getPref().putBoolean(DIRECTION_AUTO_SET, value);
+  }
+  
+  public static boolean isShowPopupEnabled() {
+    return Config.getPref().getBoolean(DIRECTION_SHOW_POPUP, true);
+  }
+  
+  static void setShowPopupEnabled(boolean value) {
+    Config.getPref().putBoolean(DIRECTION_SHOW_POPUP, value);
   }
 }
 
