@@ -67,7 +67,11 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     p.add(toFront, GBC.std().fill(GBC.HORIZONTAL));
     p.add(detachEnabled, GBC.std(0, 2));
     p.add(createNode, GBC.std(0, 3));
-    p.add(splitWays, GBC.std(0, 4));
+    
+    if(KindaHackedInUtilsPlugin.getInstance().hasSplitMode()) {
+      p.add(splitWays, GBC.std(0, 4));
+    }
+    
     p.add(directionEnabled, GBC.std(0, 5));
     
     GridBagConstraints gc = GBC.std(0, 6);

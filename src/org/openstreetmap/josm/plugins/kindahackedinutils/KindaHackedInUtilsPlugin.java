@@ -97,14 +97,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private final AngleAction angleAction;
   private final Shortcut angleDegreeShortcut;
   private final Shortcut drawNodeShortcut;
-  private final Shortcut splitWayShortcut;
+  private Shortcut splitWayShortcut;
   private SplitMode splitMode;
 
   public KindaHackedInUtilsPlugin(PluginInformation info) {
     super(info);
     instance = this;
     drawNodeShortcut = Shortcut.registerShortcut("kindahackedinutils.drawNodeAtMouse", tr("Draw node at mouse location"), KeyEvent.VK_B, Shortcut.DIRECT);
-    splitWayShortcut = Shortcut.registerShortcut("kindahackedinutils.splitWay", tr("Split way at mouse location"), KeyEvent.VK_K, Shortcut.DIRECT);
     angleDegreeShortcut = Shortcut.registerShortcut("kindahackedinutils.angleDegree", tr("Get heading in degrees"), KeyEvent.VK_H, Shortcut.ALT_SHIFT);
     
     angleAction = new AngleAction();
@@ -250,6 +249,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     return new KindaHackedInUtilsPreferences();
   }
   
+  boolean hasSplitMode() {
+    return splitMode != null;
+  }
+  
   private static String getDirectionFromHeading(int test) {
     String angle = String.valueOf(test);
     
@@ -310,6 +313,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           splitMode = (SplitMode)b.getAction();
           break;
         }
+      }
+      
+      if(splitMode != null) {
+        splitWayShortcut = Shortcut.registerShortcut("kindahackedinutils.splitWay", tr("Split way at mouse location"), KeyEvent.VK_K, Shortcut.DIRECT);
       }
     }
     
@@ -380,14 +387,16 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               }
             }
           }
-          else if(splitWayShortcut.isEvent(e)) {
+          else if(splitWayShortcut != null && splitWayShortcut.isEvent(e)) {
             if(Conf.isSplitWay() && splitMode != null) {
               MainApplication.getMenu().unselectAll.actionPerformed(null);
   
               Point b = MainApplication.getMap().mapView.getMousePosition(true);
               
               if(b != null) {
+                splitMode.putValue("active", Boolean.TRUE);
                 splitMode.mousePressed(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
+                splitMode.putValue("active", Boolean.FALSE);
               }
             }
           }
@@ -413,7 +422,6 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         JPopupMenu menu = new JPopupMenu();
         
         if(!highways.isEmpty()) {
-          System.out.println("HIER2");
           ChangeListener cl = new ChangeListener() {
             WayMenuItem lastItem;
             
@@ -474,7 +482,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           boolean sameDirection = false;
           
           String lastNodePos = null;
-          String direction = n.hasKey("direction") ? n.get("direction") : n.hasKey("traffic_sign:direction") ? n.get("traffic_sgin:direction") : null;
+          String direction = n.hasKey("direction") ? n.get("direction") : n.hasKey("traffic_sign:direction") ? n.get("traffic_sign:direction") : null;
           
           WaySegment segmentPointed = null;
           
@@ -566,7 +574,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             return false;
           }
         }
-        else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction")) || (!objectSpecificDirection && n.hasKey("traffic_sign") && !n.hasKey("direction")) ||
+        else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction") && !Objects.equals("stop", n.get("highway")) && !Objects.equals("give_way", n.get("highway"))) || 
+            (!objectSpecificDirection && n.hasKey("traffic_sign") && !n.hasKey("direction")  && !Objects.equals("stop", n.get("highway")) && !Objects.equals("give_way", n.get("highway"))) ||
             (!n.hasKey("direction") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))))) {
           ActionListener a = new ActionListener() {
             @Override
@@ -574,7 +583,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               if(e.getSource() instanceof JMenuItem) {
                 final HashSet<Command> cmds = new HashSet<>(2);
                 
-                if(objectSpecificDirection && n.hasKey("traffic_sign")) {
+                if(objectSpecificDirection && n.hasKey("traffic_sign")  && !Objects.equals("stop", n.get("highway")) && !Objects.equals("give_way", n.get("highway"))) {
                   cmds.add(new ChangePropertyCommand(n, "traffic_sign:direction", ((JMenuItem)e.getSource()).getName()));
                   cmds.add(new ChangePropertyCommand(n, "direction", null));
                 }
@@ -952,19 +961,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   
                   LinkedList<Command> cmdList = new LinkedList<>();
                   
-                  if(simpleDirection != null) {
+                  if(simpleDirection != null && !Objects.equals(ACTION_NAME, e.getActionCommand())) {
                     if(!n.hasKey("traffic_sign") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))) {
                       angle.set(simpleDirection);
                     }
                     else if(n.hasKey("traffic_sign") && (objectSpecificDirection || 
-                        (Conf.isSimpleDirection() &&
-                            !Objects.equals(ACTION_NAME, e.getActionCommand())))) {
+                        (Conf.isSimpleDirection()))) {
                       if(objectSpecificDirection) {
                         key = "traffic_sign:direction";
-                        cmdList.add(new ChangePropertyCommand(n, "direction", null));
-                      }
-                      else {
-                        cmdList.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
                       }
                       
                       angle.set(simpleDirection);
@@ -979,6 +983,19 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     Config.getPref().putBoolean("kindahackedinutils.angleInfoNotShown", false);
                   }
                 
+                  if(Objects.equals("direction", key)) {
+                    cmdList.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
+                    cmdList.add(new ChangePropertyCommand(n, "traffic_signals:direction", null));
+                  }
+                  else if(Objects.equals("traffic_sign:direction", key)) {
+                    cmdList.add(new ChangePropertyCommand(n, "direction", null));
+                    cmdList.add(new ChangePropertyCommand(n, "traffic_signals:direction", null));
+                  }
+                  else if(Objects.equals("traffic_signals:direction", key)) {
+                    cmdList.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
+                    cmdList.add(new ChangePropertyCommand(n, "direction", null));                    
+                  }
+                  
                   cmdList.add(new ChangePropertyCommand(n, key, angle.get()));
                   
                   UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction", cmdList));
