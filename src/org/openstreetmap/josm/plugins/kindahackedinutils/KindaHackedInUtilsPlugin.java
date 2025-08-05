@@ -180,12 +180,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           waitForEventEnd = new Thread() {
             public void run() {
               try {
-                Thread.sleep(50);
+                Thread.sleep(100);
               } catch (InterruptedException e) {
                 // ignore
               }
               
-              if(lastChanged != null && System.currentTimeMillis() - lastChangedEvent < 500 && event.getPrimitives().size() == 1) {
+              Way toUse = lastChanged;
+              
+              if(toUse != null && toUse.getNodesCount() > 0 && System.currentTimeMillis() - lastChangedEvent < 500 && event.getPrimitives().size() == 1) {
                 Optional<? extends OsmPrimitive> test = event.getPrimitives().stream().filter(w->w instanceof Way).findFirst();
                 
                 if(test.isPresent()) {
@@ -193,12 +195,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   
                   AtomicReference<Node> changed = new AtomicReference<>();
                   
-                  if(newWay != null && newWay.getNodesCount() > 0 && newWay.getNode(0) == lastChanged.getNode(0) ||
-                      newWay.getNode(0) == lastChanged.getNode(lastChanged.getNodesCount()-1)) {
+                  if(newWay.getNodesCount() > 0 && (newWay.getNode(0) == toUse.getNode(0) || newWay.getNode(0) == toUse.getNode(toUse.getNodesCount()-1))) {
                     changed.set(newWay.getNode(0));
                   }
-                  else if(newWay.getNodesCount() > 0 && newWay.getNode(newWay.getNodesCount()-1) == lastChanged.getNode(0) ||
-                      newWay.getNode(newWay.getNodesCount()-1) == lastChanged.getNode(lastChanged.getNodesCount()-1)) {
+                  else if(newWay.getNodesCount() > 0 && (newWay.getNode(newWay.getNodesCount()-1) == toUse.getNode(0) || newWay.getNode(newWay.getNodesCount()-1) == toUse.getNode(toUse.getNodesCount()-1))) {
                     changed.set(newWay.getNode(1));
                   }
                   
@@ -1155,7 +1155,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     private void calculateAngles() {
       Area area = Geometry.getAreaEastNorth(way);
       
-      for(int i = 0; i < way.getNodesCount(); i++) {
+      for(int i = 0; i < way.getNodesCount()-1; i++) {
         double angle = -1;
         
         double angleMeToPrev = -1;
@@ -1209,11 +1209,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         
         EastNorth add = calculateMove(angle, length);
-        //System.out.println(angleMeToPrev + " | " + angleMeToNext + " " + angle + " | " + alpha + " | " + length + " | " + add);
-        EastNorth test = way.getNode(i).getEastNorth().add(add.east() < 0 ? -2 : 2, add.north() < 0 ? -2 : 2);
-//        EastNorth test2 = way.getNode(i).getEastNorth().add(add.east() < 0 ? 2 : -2, add.north() < 0 ? 2 : -2);
         
-        //System.out.println(" " + area.contains(test.east(), test.north()) + " " + area.contains(test2.east(), test2.north()));
+  //      System.out.println(angleMeToPrev + " | " + angleMeToNext + " " + angle + " | " + alpha + " | " + length + " | " + add);
+//        EastNorth test = way.getNode(i).getEastNorth().add(add.east() < 0 ? -v : v, add.north() < 0 ? -v : v);
+ //       EastNorth test2 = way.getNode(i).getEastNorth().add(add.east() < 0 ? v : -v, add.north() < 0 ? v : -v);
+        EastNorth test = way.getNode(i).getEastNorth().add(add.east(), add.north());
+   //     EastNorth test2 = way.getNode(i).getEastNorth().add(-add.east(), -add.north());
+
+    //    System.out.println(area.contains(test.east(), test.north()) + " " + area.contains(test2.east(), test2.north()));
         
         if(!area.contains(test.east(), test.north())) {
           add = new EastNorth(-add.east(), -add.north());
