@@ -25,7 +25,7 @@
     <property name="plugin.class" value="org.openstreetmap.josm.plugins.kindahackedinutils.KindaHackedInUtilsPlugin"/>
     <property name="plugin.description" value="Several useful utils that are kind of hacked into JOSM."/>
 	<property name="de.plugin.description" value="Mehrere nützliche Funktionen, die irgendwie in JOSM gehackt werden."/>
-    <property name="plugin.icon" value="images/detach.svg"/>
+    <property name="plugin.icon" value="images/preferences/detach.svg"/>
     <property name="plugin.canloadatruntime" value="true"/>
 <!--    <property name="plugin.link" value="..."/> -->
     <!--<property name="plugin.early" value="..."/>-->

@@ -193,11 +193,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   
                   AtomicReference<Node> changed = new AtomicReference<>();
                   
-                  if(newWay.getNode(0) == lastChanged.getNode(0) ||
+                  if(newWay.getNodesCount() > 0 && newWay.getNode(0) == lastChanged.getNode(0) ||
                       newWay.getNode(0) == lastChanged.getNode(lastChanged.getNodesCount()-1)) {
                     changed.set(newWay.getNode(0));
                   }
-                  else if(newWay.getNode(newWay.getNodesCount()-1) == lastChanged.getNode(0) ||
+                  else if(newWay.getNodesCount() > 0 && newWay.getNode(newWay.getNodesCount()-1) == lastChanged.getNode(0) ||
                       newWay.getNode(newWay.getNodesCount()-1) == lastChanged.getNode(lastChanged.getNodesCount()-1)) {
                     changed.set(newWay.getNode(1));
                   }
@@ -597,7 +597,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 if(wayPointedAt != null) {
                   SwingUtilities.invokeLater(() -> wayPointedAt.setHighlighted(true));
-               }
+                }
               }
             }
           };
@@ -937,14 +937,6 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                         if(segmentPointed != null && way.isHighlighted() && segmentPointed.getWay() == way && segmentPointed.getSecondNode() == n) {
                           next = null;
                         }
-                        /*
-                        LatLon mousePoint = MainApplication.getMap().mapView.getLatLon(p.x, p.y);
-                        BBox prevBox = n.getBBox();
-                        prevBox.add(prev.getBBox());
-
-                        if(prevBox.contains(mousePoint)) {
-                          next = null;
-                        }*/
                       }
                       
                       if(next == null) {
@@ -962,7 +954,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   LinkedList<Command> cmdList = new LinkedList<>();
                   
                   if(simpleDirection != null && !Objects.equals(ACTION_NAME, e.getActionCommand())) {
-                    if(!n.hasKey("traffic_sign") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))) {
+                    if(!n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"))) {
                       angle.set(simpleDirection);
                     }
                     else if(n.hasKey("traffic_sign") && (objectSpecificDirection || 
@@ -1102,14 +1094,12 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       
       Way[] ways = me.referrers(Way.class).toArray(Way[]::new);
       Relation[] multis = way.referrers(Relation.class).filter(Relation::isMultipolygon).toArray(Relation[]::new);
-      System.out.println("WAYS LENGTH " + ways.length + " MULTIS LENGTH " + multis.length);
+      
       for(Way w : ways) {
         boolean inSameMultipoligone = matchingRelations(multis, w.referrers(Relation.class).filter(Relation::isMultipolygon).toArray(Relation[]::new));
-        System.out.println("  inSameMultipoligone " + inSameMultipoligone);  
+          
         if(w != way) {
           Node foundNode = null;
-          
-          System.out.println(" ME NODE " + me + "\n LAST NODE " + w.getNode(w.getNodesCount()-1)+"\n FIRST NODE " + w.getNode(0));
           
           if(w.getNode(w.getNodesCount()-1) == me) {
             foundNode = w.getNode(w.getNodesCount()-2);
@@ -1117,7 +1107,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           else if(w.getNode(0) == me) {
             foundNode = w.getNode(1);
           }
-          System.out.println(" FOUND NODE " + foundNode);
+          
           if(foundNode != null) {
             if(inSameMultipoligone) {
               return foundNode;
@@ -1219,11 +1209,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         
         EastNorth add = calculateMove(angle, length);
-        System.out.println(angleMeToPrev + " | " + angleMeToNext + " " + angle + " | " + alpha + " | " + length + " | " + add);
+        //System.out.println(angleMeToPrev + " | " + angleMeToNext + " " + angle + " | " + alpha + " | " + length + " | " + add);
         EastNorth test = way.getNode(i).getEastNorth().add(add.east() < 0 ? -2 : 2, add.north() < 0 ? -2 : 2);
-        EastNorth test2 = way.getNode(i).getEastNorth().add(add.east() < 0 ? 2 : -2, add.north() < 0 ? 2 : -2);
+//        EastNorth test2 = way.getNode(i).getEastNorth().add(add.east() < 0 ? 2 : -2, add.north() < 0 ? 2 : -2);
         
-        System.out.println(" " + area.contains(test.east(), test.north()) + " " + area.contains(test2.east(), test2.north()));
+        //System.out.println(" " + area.contains(test.east(), test.north()) + " " + area.contains(test2.east(), test2.north()));
         
         if(!area.contains(test.east(), test.north())) {
           add = new EastNorth(-add.east(), -add.north());
