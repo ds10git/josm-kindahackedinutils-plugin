@@ -193,7 +193,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   
                   AtomicReference<Node> changed = new AtomicReference<>();
                   
-                  if(newWay.getNodesCount() > 0 && newWay.getNode(0) == lastChanged.getNode(0) ||
+                  if(newWay != null && newWay.getNodesCount() > 0 && newWay.getNode(0) == lastChanged.getNode(0) ||
                       newWay.getNode(0) == lastChanged.getNode(lastChanged.getNodesCount()-1)) {
                     changed.set(newWay.getNode(0));
                   }
