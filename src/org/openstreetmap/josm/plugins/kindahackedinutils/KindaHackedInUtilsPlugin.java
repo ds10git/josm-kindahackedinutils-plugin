@@ -52,9 +52,11 @@ import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.OsmData;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.TagMap;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.WaySegment;
@@ -89,6 +91,9 @@ import org.openstreetmap.josm.tools.Utils;
  */
 public class KindaHackedInUtilsPlugin extends Plugin {
   private static final String ACTION_NAME = "SHIFT+ALT+H_ALTERNATIVE";
+  
+  private DataSet editDataSet;
+  private OsmData<?, ?, ?, ?> activeData;
   
   private static KindaHackedInUtilsPlugin instance;
   private final ImageIcon arrow;
@@ -330,13 +335,26 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         @Override
         public void activeOrEditLayerChanged(ActiveLayerChangeEvent e) {
           if(e.getPreviousDataSet() != null) {
-            e.getPreviousDataSet().removeDataSetListener(listener);
-            e.getPreviousDataSet().removeSelectionListener(selectionListener);
+            if(editDataSet != null) {
+              editDataSet.removeDataSetListener(listener);
+              editDataSet = null;
+            }
+            if(activeData != null) {
+              activeData.removeSelectionListener(selectionListener);
+              activeData = null;
+            }
           }
           
           if(MainApplication.getLayerManager().getEditDataSet() != null) {
-            MainApplication.getLayerManager().getEditDataSet().addDataSetListener(listener);
-            MainApplication.getLayerManager().getActiveData().addSelectionListener(selectionListener);
+            if(editDataSet == null || editDataSet != MainApplication.getLayerManager().getEditDataSet()) {
+              editDataSet = MainApplication.getLayerManager().getEditDataSet();
+              editDataSet.addDataSetListener(listener);
+              
+              if(activeData == null || activeData != MainApplication.getLayerManager().getActiveData()) {
+                activeData = MainApplication.getLayerManager().getActiveData();
+                activeData.addSelectionListener(selectionListener);
+              }
+            }
           }
         }
       });
@@ -1155,6 +1173,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     private void calculateAngles() {
       Area area = Geometry.getAreaEastNorth(way);
       
+      Relation[] multis = way.referrers(Relation.class).filter(Relation::isMultipolygon).toArray(Relation[]::new);
+      
+      if(!way.isClosed() && multis.length == 1) {
+        LinkedList<Node> nodeList = new LinkedList<Node>();
+        
+        for(int i = 0; i < multis[0].getMembersCount(); i++) {
+          RelationMember m = multis[0].getMember(i);
+          if(m.isWay() && !m.getWay().isIncomplete() && Objects.equals("outer", m.getRole())) {
+            nodeList.addAll(m.getWay().getNodes());
+          }
+        }
+        
+        area = Geometry.getArea(nodeList);
+      }
+      
       for(int i = 0; i < way.getNodesCount()-1; i++) {
         double angle = -1;
         
@@ -1209,14 +1242,19 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         
         EastNorth add = calculateMove(angle, length);
+      
+        EastNorth test = way.getNode(i).getEastNorth().add(add.east(), add.north());
         
-  //      System.out.println(angleMeToPrev + " | " + angleMeToNext + " " + angle + " | " + alpha + " | " + length + " | " + add);
+        /*if(way.getNodeId(i) == 288771023 || way.getNodeId(i) == 300678436 || way.getNodeId(i) == 300678384) {
+          EastNorth test2 = way.getNode(i).getEastNorth().add(-add.east(), -add.north());
+          
+          System.out.println(way.getNodeId(i) + " " + angleMeToPrev + " | " + angleMeToNext + " " + angle + " | " + alpha + " | " + length + " | " + add);
 //        EastNorth test = way.getNode(i).getEastNorth().add(add.east() < 0 ? -v : v, add.north() < 0 ? -v : v);
  //       EastNorth test2 = way.getNode(i).getEastNorth().add(add.east() < 0 ? v : -v, add.north() < 0 ? v : -v);
-        EastNorth test = way.getNode(i).getEastNorth().add(add.east(), add.north());
-   //     EastNorth test2 = way.getNode(i).getEastNorth().add(-add.east(), -add.north());
-
-    //    System.out.println(area.contains(test.east(), test.north()) + " " + area.contains(test2.east(), test2.north()));
+          
+          System.out.println(area.contains(test.east(), test.north()) + " " + area.contains(test2.east(), test2.north()));
+        }*/
+        
         
         if(!area.contains(test.east(), test.north())) {
           add = new EastNorth(-add.east(), -add.north());
