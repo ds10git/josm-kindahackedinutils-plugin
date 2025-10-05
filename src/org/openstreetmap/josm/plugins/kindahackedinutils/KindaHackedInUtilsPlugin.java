@@ -56,7 +56,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
-import org.openstreetmap.josm.actions.DownloadPrimitiveAction;
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.PurgeAction;
 import org.openstreetmap.josm.actions.mapmode.SplitMode;
@@ -65,10 +64,10 @@ import org.openstreetmap.josm.command.ChangeCommand;
 import org.openstreetmap.josm.command.ChangeNodesCommand;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
-import org.openstreetmap.josm.command.PseudoCommand;
 import org.openstreetmap.josm.command.RemoveNodesCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
+import org.openstreetmap.josm.data.UndoRedoHandler.CommandQueueListener;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -77,7 +76,6 @@ import org.openstreetmap.josm.data.osm.OsmData;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
-import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Tag;
@@ -142,7 +140,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private Shortcut splitWayShortcut;
   private SplitMode splitMode;
   private PurgeAction purgeAction;
-
+  private CommandQueueListener commandListener;
+  
   public KindaHackedInUtilsPlugin(PluginInformation info) {
     super(info);
     instance = this;
@@ -290,6 +289,12 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     MainMenu.add(toolsMenu, detachAction);
     MainMenu.add(toolsMenu, turnRestrictionAction);
     MainMenu.add(toolsMenu, undo);
+    
+    commandListener = (e,x) -> {
+      undo.updateEnabledState();
+    };
+        
+    UndoRedoHandler.getInstance().addCommandQueueListener(commandListener);
   }
   
   @Override
@@ -1024,7 +1029,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           initialValue = ClipboardUtils.getClipboardStringContent();
         }
         
-        String result = JOptionPane.showInputDialog(MainApplication.getMainFrame(), tr("Enter type and id of object (like 'w12345' or 'way 12345' for way,\n'n12345' or 'node 12345' for node, 'r12345' or 'relation 12345' for relation)"), initialValue);
+        String result = JOptionPane.showInputDialog(MainApplication.getMainFrame(), tr("Enter type and id of object (like ''w12345'' or ''way 12345'' for ways,\n''n12345'' or ''node 12345'' for nodes, ''r12345'' or ''relation 12345'' for relations)"), initialValue);
         
         if(result == null) {
           return;
@@ -1130,7 +1135,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     @Override
     protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
-        if (MainApplication.getLayerManager().getEditDataSet() == null) {
+        if (MainApplication.getLayerManager().getEditDataSet() == null || !UndoRedoHandler.getInstance().hasUndoCommands()) {
             setEnabled(false);
             return;
         }
