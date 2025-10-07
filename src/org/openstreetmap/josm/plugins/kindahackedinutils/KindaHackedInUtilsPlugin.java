@@ -18,6 +18,7 @@ import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Area;
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ import java.util.stream.Stream;
 
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.Icon;
@@ -52,10 +54,18 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.JScrollPane;
+import javax.swing.JTree;
 import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeCellRenderer;
+import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreeSelectionModel;
 
+import org.openstreetmap.josm.actions.AutoScaleAction;
+import org.openstreetmap.josm.actions.AutoScaleAction.AutoScaleMode;
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.PurgeAction;
 import org.openstreetmap.josm.actions.mapmode.SplitMode;
@@ -64,6 +74,8 @@ import org.openstreetmap.josm.command.ChangeCommand;
 import org.openstreetmap.josm.command.ChangeNodesCommand;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
+import org.openstreetmap.josm.command.DeleteCommand;
+import org.openstreetmap.josm.command.PseudoCommand;
 import org.openstreetmap.josm.command.RemoveNodesCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -97,9 +109,12 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
+import org.openstreetmap.josm.gui.dialogs.CommandListMutableTreeNode;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.KeyPressReleaseListener;
 import org.openstreetmap.josm.gui.util.WindowGeometry;
 import org.openstreetmap.josm.plugins.Plugin;
@@ -108,7 +123,9 @@ import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Geometry;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
+import org.openstreetmap.josm.tools.InputMapUtils;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.SubclassFilteredCollection;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
@@ -151,7 +168,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     angleAction = new AngleAction();
     DetachAction detachAction = new DetachAction();
     TurnRestrictionAction turnRestrictionAction = new TurnRestrictionAction();
-    UndoSelectedAction undo = new UndoSelectedAction();
+    UndoRedoSelectedAction undo = new UndoRedoSelectedAction();
     
     arrow = ImageProvider.get("N", ImageSizes.POPUPMENU);
     listener = new DataSetListener() {
@@ -1013,10 +1030,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
   }
   
-  class UndoSelectedAction extends JosmAction {
-    public UndoSelectedAction() {
-      super(tr("Undo changes on selected object"), /* ICON() */ "undo.svg", tr("Undo changes on selected object"),
-          Shortcut.registerShortcut("kindahackedinutils.undoObject", tr("undo object"), KeyEvent.VK_Z,
+  class UndoRedoSelectedAction extends JosmAction {
+    public UndoRedoSelectedAction() {
+      super(tr("Undo/redo changes on selected object"), /* ICON() */ "unredo.svg", tr("Undo/redo changes on selected object"),
+          Shortcut.registerShortcut("kindahackedinutils.undoRedoObject", tr("undo/redo object"), KeyEvent.VK_Z,
                   Shortcut.ALT_CTRL_SHIFT), false);
     }
 
@@ -1025,7 +1042,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       if(MainApplication.getLayerManager().getActiveData().getAllSelected().isEmpty()) {
         String initialValue = "";
         
-        if(ClipboardUtils.getClipboardStringContent().matches("([wnr]{1}|way\\s+|node\\s+|relation\\s+)\\d+")) {
+        if(ClipboardUtils.getClipboardStringContent() != null && ClipboardUtils.getClipboardStringContent().matches("([wnr]{1}|way\\s+|node\\s+|relation\\s+)\\d+")) {
           initialValue = ClipboardUtils.getClipboardStringContent();
         }
         
@@ -1102,17 +1119,35 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         DownloadPrimitiveAction.processItems(false, ids, false, false);
       }*/
       
+      List<Command> undos = UndoRedoHandler.getInstance().getUndoCommands();
       Collection<OsmPrimitive> selected = OsmDataManager.getInstance().getActiveDataSet().getAllSelected();
-      
-      LinkedList<Node> affectedNodes = new LinkedList<>();
+      HashSet<Node> affectedNodes = new HashSet<>();
       
       for(OsmPrimitive s : selected) {
         if(s instanceof Way) {
-          affectedNodes.addAll(((Way)s).getNodes());
+          Way w = (Way)s;
+          
+          if(w.isDeleted()) {
+            for(Command undo : undos) {
+              if(undo.getParticipatingPrimitives().contains(w) && undo instanceof SequenceCommand) {
+                for(PseudoCommand pc : undo.getChildren()) {
+                  if(pc instanceof DeleteCommand) {
+                    pc.getParticipatingPrimitives().forEach(o -> {
+                      if(o instanceof Node) {
+                        affectedNodes.add((Node)o);
+                      }
+                    });
+                  }
+                }
+              }
+            }
+          }
+          
+          affectedNodes.addAll(w.getNodes());
         }
       }
       
-      List<Command> undos = UndoRedoHandler.getInstance().getUndoCommands();
+      LinkedList<Command> matchingUndosList = new LinkedList<Command>();
       
       for(int i = undos.size()-1; i >= 0; i--) {
         Command c = undos.get(i);
@@ -1120,11 +1155,20 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         Collection<? extends OsmPrimitive> primitives = c.getParticipatingPrimitives();
         
         for(OsmPrimitive p : primitives) {
-          if(selected.contains(p) || (p instanceof Node && affectedNodes.contains(p))) {
-            c.undoCommand();
+          if(selected.contains(p) || (p instanceof Node && (affectedNodes.contains(p)))) {
+            matchingUndosList.add(c);
             break;
           }
         }
+      }
+      
+      if(matchingUndosList.isEmpty()) {
+        JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("No undo commands for selected object found."));
+      }
+      else {
+        UndoRedoDialog undo = new UndoRedoDialog(matchingUndosList);
+        
+        undo.showDialog();
       }
     }
     
@@ -1261,7 +1305,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     }
                   }
                   else if(n.hasKey("traffic_sign") && Config.getPref().getBoolean("kindahackedinutils.angleInfoNotShown", true)) {
-                    JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it's effect is.\nFor example if a street's direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
+                    JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it''s effect is.\nFor example if a street's direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
                     Config.getPref().putBoolean("kindahackedinutils.angleInfoNotShown", false);
                   }
                 
@@ -1635,7 +1679,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private static final class TurnRestrictionDialog extends ExtendedDialog {
     private JList<String> restrictionType;
     private ButtonGroup onlyForGroup;
-    private JCheckBox[] except;
+    private ImageSelectionButton[] except;
     private String only;
     private Set<String> exceptValue;
     
@@ -1699,12 +1743,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       left.add(new JLabel(tr("only for:")));
       
       final String[] values = {"hgv", "caravan", "motorcar", "bus", "agricultural", "motorcycle", "bicycle", "hazmat"};
-      final JCheckBox[] onlyFor = new JCheckBox[values.length];
+      final String[] iconNames = {"presets/vehicle/restriction/goods","caravan","presets/vehicle/restriction/motorcar","presets/vehicle/restriction/psv","tractor","presets/vehicle/restriction/motorbike","presets/vehicle/restriction/bicycle","hazmat"};
+      final ImageSelectionButton[] onlyFor = new ImageSelectionButton[values.length];
       onlyForGroup = new ButtonGroup();
       
       for(int i = 0; i < values.length; i++) {
-        onlyFor[i] = new JCheckBox(tr(values[i]));
+        onlyFor[i] = new ImageSelectionButton(iconNames[i], values[i]);
         onlyFor[i].setName(values[i]);
+        onlyFor[i].setAlignmentX(LEFT_ALIGNMENT);
         onlyForGroup.add(onlyFor[i]);
         left.add(onlyFor[i]);
         
@@ -1718,11 +1764,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       right.add(new JLabel(tr("except:")));
       
       final String[] values2 = {"psv", "bicycle", "hgv", "motorcar", "emergency"};
-      except = new JCheckBox[values2.length];
+      final String[] iconNames2 = {"presets/transport/bus", "presets/vehicle/restriction/plain/bicycle", "hgv", "presets/vehicle/restriction/plain/motorcar", "presets/emergency/ambulance_station"};
+      except = new ImageSelectionButton[values2.length];
       
       for(int i = 0; i < values2.length; i++) {
-        except[i] = new JCheckBox(tr(values2[i]));
+        except[i] = new ImageSelectionButton(iconNames2[i], tr(values2[i]));
         except[i].setName(values2[i]);
+        except[i].setAlignmentX(LEFT_ALIGNMENT);
         right.add(except[i]);
         
         if(exceptValue != null && exceptValue.contains(values2[i])) {
@@ -1923,12 +1971,272 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       };
     }
     
-    public void add(AbstractButton b) {
-      b.addItemListener(listener);
+    public void add(Object b) {
+      if(b instanceof AbstractButton) {
+        ((AbstractButton)b).addItemListener(listener);
+      }
+      else if(b instanceof ImageSelectionButton) {
+        ((ImageSelectionButton) b).addItemListener(listener);
+      }
     }
     
     public AbstractButton getSelected() {
       return selected;
+    }
+  }
+  
+  // Copied from org.openstreetmap.josm.gui.dialogs.CommandStackDialog
+  private static class CommandCellRenderer extends DefaultTreeCellRenderer {
+    @Override
+    public Component getTreeCellRendererComponent(JTree tree, Object value, boolean sel, boolean expanded, boolean leaf, int row,
+            boolean hasFocus) {
+        super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+        DefaultMutableTreeNode v = (DefaultMutableTreeNode) value;
+        if (v.getUserObject() instanceof JLabel) {
+            JLabel l = (JLabel) v.getUserObject();
+            setIcon(l.getIcon());
+            setText(l.getText());
+        }
+        return this;
+    }
+  }
+  
+  /*
+   * Inspired by org.openstreetmap.josm.gui.dialogs.CommandStackDialog
+   */
+  private static final class UndoRedoDialog extends ExtendedDialog {
+    private final DefaultTreeModel undoTreeModel = new DefaultTreeModel(new DefaultMutableTreeNode());
+    private final JTree undoTree = new JTree(undoTreeModel);
+    private final DefaultMutableTreeNode undoRoot = new DefaultMutableTreeNode();
+    private final LinkedList<Command> matchingUndosList;
+    
+    public UndoRedoDialog(LinkedList<Command> matchingUndosList) {
+      super(MainApplication.getMainFrame(), tr("Select undo/redo command to undo/redo until"), new String[] {tr("Undo"),tr("Redo"),tr("Cancel")}, true, true);
+      setRememberWindowGeometry(getClass().getName() + ".geometry",
+          WindowGeometry.centerInWindow(MainApplication.getMainFrame(), new Dimension(850, 600)));
+      setButtonIcons("undo","redo","cancel");
+      
+      this.matchingUndosList = matchingUndosList;
+      
+      for (Command undoCommand : matchingUndosList) {
+        undoRoot.add(getNodeForCommand(undoCommand));
+      }
+      
+      undoTreeModel.setRoot(undoRoot);
+      undoTree.setRootVisible(false);
+      undoTree.addMouseListener(new MouseAdapter() {
+        @Override
+        public void mouseClicked(MouseEvent e) {
+          if(SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2 && undoTree.getSelectionPath() != null) {
+            PseudoCommand command = ((CommandListMutableTreeNode) undoTree.getSelectionPath().getLastPathComponent()).getCommand();
+            
+            if (command == null) {
+                return;
+            }
+
+            DataSet dataSet = MainApplication.getLayerManager().getEditDataSet();
+            
+            if (dataSet == null) {
+              return;
+            }
+            
+            dataSet.setSelected(getAffectedPrimitives(command));
+            AutoScaleAction.autoScale(AutoScaleMode.SELECTION);
+          }
+        }
+      });
+      undoTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+      undoTree.setShowsRootHandles(true);
+      undoTree.expandRow(0);
+      undoTree.setCellRenderer(new CommandCellRenderer());
+      
+      InputMapUtils.unassignCtrlShiftUpDown(undoTree, JComponent.WHEN_FOCUSED);
+      
+      undoTree.addTreeSelectionListener(e -> {
+        buttons.get(0).setEnabled(e.getNewLeadSelectionPath() != null);
+        buttons.get(1).setEnabled(buttons.get(0).isEnabled());
+      });
+      
+      JLabel info = new JLabel(tr("<html>Select the command that you want to be undone/redone, all later commands will also be undone/redone.<br><br>The list is sorted from last at the top to earliest at the bottom.<br>The list will contain all available undo commands for the selected object even if they have already been undone previousely.</html>"));
+      
+      JPanel content = new JPanel(new BorderLayout(0,5));
+      content.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
+      content.add(info, BorderLayout.NORTH);
+      content.add(new JScrollPane(undoTree), BorderLayout.CENTER);
+      
+      setContent(content, false);
+    }
+    
+    @Override
+    public void setVisible(boolean visible) {
+      if(visible) {
+        buttons.get(0).setEnabled(undoRoot.getChildCount() == 1);
+        buttons.get(1).setEnabled(false);
+        setDefaultButton(0);
+        
+        if(undoRoot.getChildCount() == 1) {
+          undoTree.setSelectionRow(0);
+        }
+      }
+      
+      super.setVisible(visible);
+    }
+    
+    @Override
+    protected void buttonAction(int buttonIndex, ActionEvent evt) {
+      if(buttonIndex == 0 || buttonIndex == 1) {
+        GuiHelper.runInEDTAndWait(() -> {
+          DataSet ds = OsmDataManager.getInstance().getEditDataSet();
+          if (ds != null) {
+              ds.beginUpdate();
+          }
+          try {
+            CommandListMutableTreeNode node = (CommandListMutableTreeNode) undoTree.getSelectionModel().getSelectionPath().getLastPathComponent();
+            
+            while(!Objects.equals(node.getParent(), undoRoot)) {
+              node = (CommandListMutableTreeNode) node.getParent();
+            }
+            
+            PseudoCommand selected = node.getCommand();
+            
+            if(buttonIndex == 0) {
+              for(Command c : matchingUndosList) {              
+                try {
+                  c.undoCommand();
+                }catch(Throwable e) {
+                  //ignore
+                }
+                
+                if(Objects.equals(c, selected)) {
+                  break;
+                }
+              }
+            }
+            else {
+              boolean redo = false;
+              
+              for(int i = matchingUndosList.size()-1; i >= 0; i--) {
+                if(!redo && Objects.equals(matchingUndosList.get(i), selected)) {
+                  redo = true;
+                }
+                
+                if(redo) {
+                  try {
+                    matchingUndosList.get(i).executeCommand();
+                  }catch(Throwable e) {
+                    //ignore
+                  }
+                }
+              }
+            }
+          } finally {
+              if (ds != null) {
+                  ds.endUpdate();
+              }
+          }
+        });
+      }
+      
+      super.buttonAction(buttonIndex, evt);
+    }
+    
+    /**
+     * Copied from org.openstreetmap.josm.gui.dialogs.CommandStackDialog
+     * Wraps a command in a CommandListMutableTreeNode.
+     * Recursively adds child commands.
+     * @param c the command
+     * @return the resulting node
+     */
+    private CommandListMutableTreeNode getNodeForCommand(PseudoCommand c) {
+        CommandListMutableTreeNode node = new CommandListMutableTreeNode(c);
+        if (c.getChildren() != null) {
+            List<PseudoCommand> children = new ArrayList<>(c.getChildren());
+            for (PseudoCommand child : children) {
+                node.add(getNodeForCommand(child));
+            }
+        }
+        return node;
+    }
+    
+    /**
+     * Copied from org.openstreetmap.josm.gui.dialogs.CommandStackDialog
+     * Return primitives that are affected by some command
+     * @param c the command
+     * @return collection of affected primitives, only usable ones
+     */
+    protected static Collection<? extends OsmPrimitive> getAffectedPrimitives(PseudoCommand c) {
+        final OsmDataLayer currentLayer = MainApplication.getLayerManager().getEditLayer();
+        return new SubclassFilteredCollection<>(
+                c.getParticipatingPrimitives(),
+                o -> {
+                    OsmPrimitive p = currentLayer.data.getPrimitiveById(o);
+                    return p != null && p.isUsable();
+                }
+        );
+    }
+  }
+  
+  public static class ImageSelectionButton extends JPanel {
+    private JCheckBox button;
+    private JLabel label;
+        
+    public ImageSelectionButton(String image, String text) {
+      this(image, text, false);
+    }
+        
+    public ImageSelectionButton(String image, String text, boolean buttonLast) {
+      setLayout(new BoxLayout(this, BoxLayout.LINE_AXIS));
+      setOpaque(false);
+      button = new JCheckBox();
+      MouseAdapter m = new MouseAdapter() {
+        @Override
+        public void mouseClicked(MouseEvent e) {
+          if(SwingUtilities.isLeftMouseButton(e)) {
+            button.setSelected(!button.isSelected());
+          }
+        }
+      };
+      this.addMouseListener(m);
+      
+      label = new JLabel(ImageProvider.get(image, ImageSizes.LARGEICON));
+      label.addMouseListener(m);
+      
+      if(text != null) {
+        label.setText(text);
+      }
+      
+      if(!buttonLast) {
+        add(button);
+        add(Box.createRigidArea(new Dimension(5,0)));
+        add(label);
+      }
+      else {
+        add(label);
+        add(Box.createRigidArea(new Dimension(5,0)));
+        add(button);
+      }
+    }
+    
+    public void addItemListener(ItemListener listener) {
+      button.addItemListener(listener);
+    }
+    
+    public boolean isSelected() {
+      return button.isSelected();
+    }
+    
+    public void setSelected(boolean isSelected) {
+      button.setSelected(isSelected);
+    }
+    
+    public boolean isButton(Object o) {
+      return Objects.equals(button, o);
+    }
+    
+    public void setEnabled(boolean value) {
+      super.setEnabled(value);
+      button.setEnabled(value);
+      label.setEnabled(value);
     }
   }
 }
