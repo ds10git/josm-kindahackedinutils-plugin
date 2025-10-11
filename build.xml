@@ -27,7 +27,7 @@
 	<property name="de.plugin.description" value="Mehrere nützliche Funktionen, die irgendwie in JOSM gehackt werden."/>
     <property name="plugin.icon" value="images/preferences/detach.svg"/>
     <property name="plugin.canloadatruntime" value="true"/>
-<!--    <property name="plugin.link" value="..."/> -->
+    <property name="plugin.link" value="https://josm.openstreetmap.de/wiki/Help/Plugin/KindaHackedInUtils"/>
     <!--<property name="plugin.early" value="..."/>-->
     <!--<property name="plugin.requires" value="..."/>-->
     <!--<property name="plugin.stage" value="..."/>-->
