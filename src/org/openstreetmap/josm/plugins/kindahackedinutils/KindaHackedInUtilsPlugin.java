@@ -1288,10 +1288,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   LinkedList<Command> cmdList = new LinkedList<>();
                   
                   if(simpleDirection != null && !Objects.equals(ACTION_NAME, e.getActionCommand())) {
-                    if(!n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"))) {
-                      angle.set(simpleDirection);
-                    }
-                    else if(n.hasKey("traffic_sign") && (objectSpecificDirection || 
+                    if(n.hasKey("traffic_sign") && (objectSpecificDirection || 
                         (Conf.isSimpleDirection()))) {
                       if(objectSpecificDirection) {
                         key = "traffic_sign:direction";
@@ -1299,8 +1296,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       
                       angle.set(simpleDirection);
                     }
-                    else if(n.hasTag("highway", "traffic_signals") ) {
+                    else if(n.hasTag("highway", "traffic_signals")) {
                       key = "traffic_signals:direction";
+                      angle.set(simpleDirection);
+                    }
+                    else if(!n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"))) {
                       angle.set(simpleDirection);
                     }
                   }
