@@ -71,6 +71,7 @@ import org.openstreetmap.josm.actions.PurgeAction;
 import org.openstreetmap.josm.actions.mapmode.SplitMode;
 import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.ChangeCommand;
+import org.openstreetmap.josm.command.ChangeMembersCommand;
 import org.openstreetmap.josm.command.ChangeNodesCommand;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
@@ -169,6 +170,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     DetachAction detachAction = new DetachAction();
     TurnRestrictionAction turnRestrictionAction = new TurnRestrictionAction();
     UndoRedoSelectedAction undo = new UndoRedoSelectedAction();
+    AddToRelationAction addToRelation = new AddToRelationAction();
     
     arrow = ImageProvider.get("N", ImageSizes.POPUPMENU);
     listener = new DataSetListener() {
@@ -306,6 +308,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     MainMenu.add(toolsMenu, detachAction);
     MainMenu.add(toolsMenu, turnRestrictionAction);
     MainMenu.add(toolsMenu, undo);
+    MainMenu.add(toolsMenu, addToRelation);
     
     commandListener = (e,x) -> {
       undo.updateEnabledState();
@@ -502,6 +505,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   }
   
   private synchronized boolean changeDirectionForTrafficSign(Collection<? extends OsmPrimitive> list, boolean ignoreExistingValue, Way wayPointedAt, final boolean objectSpecificDirection, boolean autoSet) {
+    
     if(list.size() == 1 && list.stream().findFirst().get() instanceof Node) {
       final Node n = (Node)list.stream().findFirst().get();
       Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
@@ -635,7 +639,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             }
             
             if(d != -1) {
-              if(!Objects.equals(lastNodePos, nodePos)) {
+              if(lastNodePos != null && !Objects.equals(lastNodePos, nodePos)) {
                 sameDirection = true;
               }
               
@@ -769,6 +773,80 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     return instance;
   }
   
+  class AddToRelationAction extends JosmAction {
+    public AddToRelationAction() {
+      super(tr("Add selected objects to selected relation"), /* ICON() */ "relation-add", tr("Adds selected objects to selected relation"),
+          Shortcut.registerShortcut("kindahackedinutils.relation-add", tr("Add selected objects to selected relation"), KeyEvent.VK_R, Shortcut.CTRL), false);
+    }
+    
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      OsmPrimitive[] selection = MainApplication.getLayerManager().getEditDataSet().getSelected().toArray(OsmPrimitive[]::new);
+      
+      if(selection.length > 0 && selection[0] instanceof Relation) {
+        List<OsmPrimitive> members = ((Relation)selection[0]).getMemberPrimitivesList();
+        List<RelationMember> newMembers = ((Relation)selection[0]).getMembers();
+        
+        for(int i = 1; i < selection.length; i++) {
+          if(!members.contains(selection[i])) {
+            String role = "";
+            
+            if(Objects.equals(selection[i].get("public_transport"),"platform")) {
+              role = "platform";
+            }
+            else if(Objects.equals(selection[i].get("public_transport"),"stop_position")) {
+              role = "stop";
+            }
+            
+            newMembers.add(new RelationMember(role, selection[i]));
+          }
+        }
+        
+        if(members.size() != newMembers.size()) {
+          UndoRedoHandler.getInstance().add(new ChangeMembersCommand((Relation)selection[0], newMembers));
+        }
+      }
+    }
+    
+    @Override
+    protected void updateEnabledState() {
+        updateEnabledStateOnCurrentSelection();
+    }
+    
+    @Override
+    protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
+        if (selection == null) {
+            setEnabled(false);
+            return;
+        }
+        setEnabled(checkSelection(selection));
+    }
+    
+    private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
+      boolean enabled = false;
+      Relation r = null;
+      
+      OsmPrimitive[] primitives = selection.toArray(OsmPrimitive[]::new);
+      
+      if(primitives.length > 0 && primitives[0] instanceof Relation) {
+        r = (Relation)primitives[0];
+      }
+      
+      if(r != null) {
+        List<OsmPrimitive> members = r.getMemberPrimitivesList();
+        
+        for(int i = 1; i < primitives.length; i++) {
+          if(!members.contains(primitives[i])) {
+            enabled = true;
+            break;
+          }
+        }
+      }
+      
+      return enabled;
+    }
+  }
+  
   class DetachAction extends JosmAction {
     public DetachAction() {
       super(tr("Detach nodes from ways and move them"), /* ICON() */ "preferences/detach", tr("Detach nodes from ways and move them"),
@@ -804,7 +882,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               if(w != way && !nodeHandled.get()) {
                 removeNodes1.add(n);
                 
-                if((!way.isClosed() || way.hasKey("building"))) {
+                if((!way.isClosed() || way.hasKey("building") || way.hasKey("highway"))) {
                   allNodes1.add(new Node(n.getEastNorth().add(wayExt.getAddValueForNode(n))));
                   moveNodes1.add(allNodes1.getLast());
                   cmds1.add(new AddCommand(ds, allNodes1.getLast()));
@@ -1242,7 +1320,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       }
                     }
                   }
-                  
+                  System.out.println(ways.length);
                   if(ways.length == 1 || (ways.length == 2 && !n.hasKey("traffic_sign") && (Objects.equals(n.get("highway"), "traffic_signals") ||
                       Objects.equals(n.get("highway"), "give_way") || Objects.equals(n.get("highway"), "stop")))) {
                     Way way = ways[wayIndex];
@@ -1300,9 +1378,19 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       key = "traffic_signals:direction";
                       angle.set(simpleDirection);
                     }
+                    else if(n.hasTag("railway", "signal")) {
+                      key = "railway:signal:direction";
+                      angle.set(simpleDirection);                      
+                    }
                     else if(!n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"))) {
                       angle.set(simpleDirection);
                     }
+                  }
+                  else if(n.hasTag("highway", "street_lamp")) {
+                    key = "light:direction";
+                  }
+                  else if(n.hasTag("manmade", "surveillance")) {
+                    key = "camera:direction";
                   }
                   else if(n.hasKey("traffic_sign") && Config.getPref().getBoolean("kindahackedinutils.angleInfoNotShown", true)) {
                     JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it''s effect is.\nFor example if a street's direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
