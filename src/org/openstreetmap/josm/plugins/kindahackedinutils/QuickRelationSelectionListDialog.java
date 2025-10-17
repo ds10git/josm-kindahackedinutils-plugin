@@ -244,6 +244,11 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
   }
   
   @Override
+  public String helpTopic() {
+    return "Plugin/KindaHackedInUtils";
+  }
+  
+  @Override
   public void activeOrEditLayerChanged(ActiveLayerChangeEvent e) {
     listModel.clear();
     
