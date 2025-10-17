@@ -24,6 +24,7 @@ import java.awt.geom.Area;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -115,6 +116,9 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.KeyPressReleaseListener;
 import org.openstreetmap.josm.gui.util.WindowGeometry;
@@ -149,6 +153,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private OsmData<?, ?, ?, ?> activeData;
   
   private static KindaHackedInUtilsPlugin instance;
+  
+  private QuickRelationSelectionListDialog dialog;
+  
   private final ImageIcon arrow;
   private final DataSetListener listener;
   private final DataSelectionListener selectionListener;
@@ -440,9 +447,16 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       }
     }
     
+    if (oldFrame == null && newFrame != null) {
+      dialog = new QuickRelationSelectionListDialog();
+      newFrame.addToggleDialog(dialog);
+    } else if (oldFrame != null && newFrame == null) {
+      dialog = null;
+    }
+    
     if(oldFrame != null) {
       oldFrame.getActionMap().remove("kindahackedinutils.addHeading");
-    }
+    }   
     if(newFrame != null) {
       newFrame.getActionMap().put("kindahackedinutils.addHeading", angleAction);
       
@@ -787,19 +801,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       if(selection.length > 0 && selection[0] instanceof Relation) {
         List<OsmPrimitive> members = ((Relation)selection[0]).getMemberPrimitivesList();
         List<RelationMember> newMembers = ((Relation)selection[0]).getMembers();
+        final Collection<TaggingPreset> presets = TaggingPresets.getMatchingPresets(EnumSet.of(TaggingPresetType.forPrimitive((Relation)selection[0])), ((Relation)selection[0]).getKeys(), false);
         
         for(int i = 1; i < selection.length; i++) {
           if(!members.contains(selection[i])) {
-            String role = "";
-            
-            if(Objects.equals(selection[i].get("public_transport"),"platform")) {
-              role = "platform";
-            }
-            else if(Objects.equals(selection[i].get("public_transport"),"stop_position")) {
-              role = "stop";
-            }
-            
-            newMembers.add(new RelationMember(role, selection[i]));
+            final Set<String> roles = findSuggestedRoles(presets, selection[i]);
+                        
+            newMembers.add(new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", selection[i]));
           }
         }
         
@@ -846,6 +854,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       
       return enabled;
     }
+    
+    // Copied from org.openstreetmap.josm.gui.dialogs.relation.GenericRelationEditor
+    private Set<String> findSuggestedRoles(final Collection<TaggingPreset> presets, OsmPrimitive p) {
+      return presets.stream()
+              .map(preset -> preset.suggestRoleForOsmPrimitive(p))
+              .filter(role -> !Utils.isEmpty(role))
+              .collect(Collectors.toSet());
+  }
   }
   
   class DetachAction extends JosmAction {

@@ -1,3 +1,4 @@
+// License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.kindahackedinutils;
 
 import org.openstreetmap.josm.spi.preferences.Config;
