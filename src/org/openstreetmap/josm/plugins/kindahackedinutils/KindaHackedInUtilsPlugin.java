@@ -20,6 +20,10 @@ import java.awt.event.ItemListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionAdapter;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.awt.geom.Area;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,6 +47,8 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
+import javax.swing.DefaultListModel;
+import javax.swing.DefaultListSelectionModel;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JCheckBox;
@@ -57,6 +63,7 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTree;
+import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -110,6 +117,7 @@ import org.openstreetmap.josm.gui.IconToggleButton;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.gui.MapFrame;
+import org.openstreetmap.josm.gui.PrimitiveRenderer;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
 import org.openstreetmap.josm.gui.dialogs.CommandListMutableTreeNode;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
@@ -137,7 +145,9 @@ import org.openstreetmap.josm.tools.Utils;
  * Collection of utilities
  */
 public class KindaHackedInUtilsPlugin extends Plugin {
-  private static final String ACTION_NAME = "SHIFT+ALT+H_ALTERNATIVE";
+  private static final String ACTION_NAME_DIRECTION_ALTERNATIVE = "SHIFT+ALT+H_ALTERNATIVE";
+  private static final String ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE = "CTRL+SHIFT+R_ALTERNATIVE";
+  
   private static final LinkedList<String> TURN_RESTRICTION = 
       Stream.of(
           "no_right_turn",
@@ -160,8 +170,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private final DataSetListener listener;
   private final DataSelectionListener selectionListener;
   private final AngleAction angleAction;
+  private final AddToRelationAction addToRelation;
   private final Shortcut angleDegreeShortcut;
   private final Shortcut drawNodeShortcut;
+  private final Shortcut addToRelationShortcut;
   private Shortcut splitWayShortcut;
   private SplitMode splitMode;
   private PurgeAction purgeAction;
@@ -206,12 +218,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     instance = this;
     drawNodeShortcut = Shortcut.registerShortcut("kindahackedinutils.drawNodeAtMouse", tr("Draw node at mouse location"), KeyEvent.VK_B, Shortcut.DIRECT);
     angleDegreeShortcut = Shortcut.registerShortcut("kindahackedinutils.angleDegree", tr("Get heading in degrees"), KeyEvent.VK_H, Shortcut.ALT_SHIFT);
+    addToRelationShortcut = Shortcut.registerShortcut("kindahackedinutils.addToRelationRegardless", tr("Adds selected objects to selected relation regardless if they already are members of the relation"), KeyEvent.VK_R, Shortcut.CTRL_SHIFT);
     
     angleAction = new AngleAction();
+    addToRelation = new AddToRelationAction();
+    
     DetachAction detachAction = new DetachAction();
     TurnRestrictionAction turnRestrictionAction = new TurnRestrictionAction();
     UndoRedoSelectedAction undo = new UndoRedoSelectedAction();
-    AddToRelationAction addToRelation = new AddToRelationAction();
     
     arrow = ImageProvider.get("N", ImageSizes.POPUPMENU);
     listener = new DataSetListener() {
@@ -520,7 +534,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         @Override
         public void doKeyPressed(KeyEvent e) {
           if(angleDegreeShortcut.isEvent(e)) {
-            angleAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME));
+            angleAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME_DIRECTION_ALTERNATIVE));
           }
           else if(drawNodeShortcut.isEvent(e)) {
             if(Conf.isCreateNode()) {
@@ -533,6 +547,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 2, false, MouseEvent.BUTTON1));
               }
             }
+          }
+          else if(addToRelationShortcut.isEvent(e)) {
+            addToRelation.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE));
           }
           else if(splitWayShortcut != null && splitWayShortcut.isEvent(e)) {
             if(Conf.isSplitWay() && splitMode != null) {
@@ -801,14 +818,29 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       if(selection.length > 0 && selection[0] instanceof Relation) {
         List<OsmPrimitive> members = ((Relation)selection[0]).getMemberPrimitivesList();
         List<RelationMember> newMembers = ((Relation)selection[0]).getMembers();
+        Hashtable<OsmPrimitive, RelationMember> doublets = new Hashtable<>(); 
+        
         final Collection<TaggingPreset> presets = TaggingPresets.getMatchingPresets(EnumSet.of(TaggingPresetType.forPrimitive((Relation)selection[0])), ((Relation)selection[0]).getKeys(), false);
         
         for(int i = 1; i < selection.length; i++) {
+          final Set<String> roles = findSuggestedRoles(presets, selection[i]);
+          final RelationMember member = new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", selection[i]);
+          
           if(!members.contains(selection[i])) {
-            final Set<String> roles = findSuggestedRoles(presets, selection[i]);
-                        
-            newMembers.add(new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", selection[i]));
+            newMembers.add(member);
           }
+          else {
+            doublets.put(selection[i], member);
+          }
+        }
+        
+        if(!doublets.isEmpty() && !Objects.equals(ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE, e.getActionCommand())) {
+          AddToRelationAgainDialog dialog = new AddToRelationAgainDialog(doublets);
+          dialog.showDialog();
+        }
+        
+        if(!doublets.isEmpty()) {
+          newMembers.addAll(doublets.values());
         }
         
         if(members.size() != newMembers.size()) {
@@ -832,7 +864,6 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
     
     private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
-      boolean enabled = false;
       Relation r = null;
       
       OsmPrimitive[] primitives = selection.toArray(OsmPrimitive[]::new);
@@ -841,18 +872,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         r = (Relation)primitives[0];
       }
       
-      if(r != null) {
-        List<OsmPrimitive> members = r.getMemberPrimitivesList();
-        
-        for(int i = 1; i < primitives.length; i++) {
-          if(!members.contains(primitives[i])) {
-            enabled = true;
-            break;
-          }
-        }
-      }
-      
-      return enabled;
+      return r != null && primitives.length > 1;
     }
     
     // Copied from org.openstreetmap.josm.gui.dialogs.relation.GenericRelationEditor
@@ -1432,7 +1452,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   
                   if(simpleDirection != null &&
                       (isTrafficSign || isTrafficSignals || isRailwaySignal || isStopSign || isGiveWaySign) 
-                      && !Objects.equals(ACTION_NAME, e.getActionCommand())) {
+                      && !Objects.equals(ACTION_NAME_DIRECTION_ALTERNATIVE, e.getActionCommand())) {
                     if(isTrafficSign && (objectSpecificDirection || 
                         (Conf.isSimpleDirection()))) {
                       if(objectSpecificDirection) {
@@ -2340,6 +2360,193 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     return p != null && p.isUsable();
                 }
         );
+    }
+  }
+  
+  private static final class AddToRelationAgainDialog extends ExtendedDialog {
+    private final JList<OsmPrimitive> primitiveList;
+    private final Hashtable<OsmPrimitive, RelationMember> doubletsMemberTable;
+    private final DefaultListModel<OsmPrimitive> model;
+    
+    public AddToRelationAgainDialog(Hashtable<OsmPrimitive, RelationMember> doubletsMemberTable) {
+      super(MainApplication.getMainFrame(), tr("Select objects to add to relation again"), new String[] {tr("Add all"),tr("Add selected"),tr("Don''t add again")}, true, true);
+      setRememberWindowGeometry(getClass().getName() + ".geometry",
+          WindowGeometry.centerInWindow(MainApplication.getMainFrame(), new Dimension(630, 500)));
+      setButtonIcons("addall","dialogs/add","cancel");
+      
+      this.doubletsMemberTable = doubletsMemberTable;
+      
+      model = new DefaultListModel<>();
+      model.addAll(doubletsMemberTable.keySet());
+      
+      primitiveList = new JList<>(model);
+      primitiveList.setCellRenderer(new PrimitiveRenderer());
+      primitiveList.setSelectionModel(new SingleClickSelectionModel<OsmPrimitive>(primitiveList));
+      primitiveList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+      primitiveList.addListSelectionListener(e -> {
+        if(!e.getValueIsAdjusting()) {
+          buttons.get(1).setEnabled(primitiveList.getSelectedIndex() != -1);
+        }
+      });
+      
+      JLabel info = new JLabel(tr("<html><p>The following objects are already members of the relation.</p><p>Select the objects you want to add again or press <b>{0}</b>.</p><br><p>(The list uses single click and dragging selection.)</p></html>", tr("Add all")));
+      
+      JPanel content = new JPanel(new BorderLayout(0,5));
+      content.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
+      content.add(info, BorderLayout.NORTH);
+      content.add(new JScrollPane(primitiveList), BorderLayout.CENTER);
+      
+      setContent(content, false);
+      
+      addWindowListener(new WindowAdapter() {
+        @Override
+        public void windowClosing(WindowEvent e) {
+          cancel();
+        }
+      });
+    }
+    
+    @Override
+    protected void buttonAction(int buttonIndex, ActionEvent evt) {
+      // add all
+      if(buttonIndex == 2) {
+        cancel();
+      }
+      else if(buttonIndex == 1) {
+        for(int i = 0; i < model.getSize(); i++) {
+          if(!primitiveList.isSelectedIndex(i)) {
+            doubletsMemberTable.remove(model.get(i));
+          }
+        }
+      }
+      
+      super.buttonAction(buttonIndex, evt);
+    }
+    
+    @Override
+    public void setVisible(boolean visible) {
+      if(visible) {
+        buttons.get(1).setEnabled(false);
+        setDefaultButton(0);
+        setCancelButton(2);
+      }
+      
+      super.setVisible(visible);
+    }
+    
+    private void cancel() {
+      doubletsMemberTable.clear();
+    }
+  }
+  
+  private static final class SingleClickSelectionModel<T> extends DefaultListSelectionModel {
+    private boolean mousePressed;
+    private int indexPressed;
+    private Point lastLocation;
+    private int direction;
+    private int lastHandledIndex;
+    
+    private SingleClickSelectionModel(final JList<T> list) {
+        MouseListener[] listeners = list.getMouseListeners();
+        
+        for(MouseListener l : listeners) {
+          list.removeMouseListener(l);
+        }
+      
+        list.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+              direction = 0;
+              indexPressed = list.locationToIndex(e.getPoint());
+              
+              if(indexPressed != -1 && !list.getCellBounds(indexPressed, indexPressed).contains(e.getPoint())) {
+                indexPressed = -1;
+              }
+              
+              lastHandledIndex = indexPressed;
+              
+              if(indexPressed != -1) {
+                if(list.isSelectedIndex(indexPressed)) {
+                  list.removeSelectionInterval(indexPressed, indexPressed);
+                }
+                else {
+                  if (getSelectionMode() == MULTIPLE_INTERVAL_SELECTION) {
+                    list.addSelectionInterval(indexPressed, indexPressed);
+                  }
+                  else {
+                    list.setSelectionInterval(indexPressed, indexPressed);
+                  }
+                }
+              }
+              
+              mousePressed = true;
+            }
+            
+            @Override
+            public void mouseReleased(MouseEvent e) {
+              mousePressed = false;
+              
+              lastLocation = null;
+            }
+        });
+        
+        list.addMouseMotionListener(new MouseMotionAdapter() {
+          @Override
+          public void mouseDragged(MouseEvent e) {
+            if (getSelectionMode() == MULTIPLE_INTERVAL_SELECTION) {
+              int index = list.locationToIndex(e.getPoint());
+              
+              if(index != -1 && !list.getCellBounds(index, index).contains(e.getPoint())) {
+                index = -1;
+              }
+              
+              indexPressed = index;
+              
+              int lastiDirection = direction;
+              
+              if(lastLocation != null) {
+                if(e.getPoint().y - lastLocation.y > 0) {
+                  direction = 1;
+                }
+                else if(e.getPoint().y - lastLocation.y < 0) {
+                  direction = -1;
+                }
+              }
+              
+              if(mousePressed && index != -1 && (index != lastHandledIndex || (lastiDirection != 0 && lastiDirection != direction))) {
+                lastHandledIndex = index;
+                
+                if(list.isSelectedIndex(index)) {
+                  removeSelectionInterval(index, index);
+                }
+                else {
+                  addSelectionInterval(index, index);
+                }
+              }
+              
+              lastLocation = e.getPoint();
+            }
+          }
+        });
+    }
+    
+    @Override
+    public void setSelectionInterval(int index0, int index1) {
+      if(indexPressed != -1) {
+        if (getSelectionMode() == MULTIPLE_INTERVAL_SELECTION) {
+            if (!mousePressed ) {
+                if (isSelectedIndex(index0)) {
+                    super.removeSelectionInterval(index0, index1);
+                }
+                else {
+                    super.addSelectionInterval(index0, index1);
+                }
+            }
+        }
+        else {
+            super.setSelectionInterval(index0, index1);
+        }
+      }
     }
   }
   

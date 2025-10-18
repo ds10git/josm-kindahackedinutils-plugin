@@ -71,7 +71,7 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
   
   public QuickRelationSelectionListDialog() {
     super(tr("Quick Relation Selection List"), "relations", tr("Quickly select relations for which selected object is a memember of."),
-        Shortcut.registerShortcut("QuickRelationSelectionListDialog.listOpen", tr("Window: {0}", tr("Quick Relation Selection List")),
+        Shortcut.registerShortcut("QuickRelationSelectionListDialog.listOpen", tr("Windows: {0}", tr("Quick Relation Selection List")),
             KeyEvent.VK_R, Shortcut.ALT_CTRL_SHIFT), 150, true);
     
     relationList = new JList<>(listModel = new DefaultListModel<>());
@@ -96,7 +96,6 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
     });
     relationList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     relationList.addMouseMotionListener(new MouseMotionListener() {
-      
       @Override
       public void mouseMoved(MouseEvent e) {
         clearHighlighting();
@@ -245,7 +244,7 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
   
   @Override
   public String helpTopic() {
-    return "Plugin/KindaHackedInUtils";
+    return "Plugin/KindaHackedInUtils#QuickRelationSelectionList";
   }
   
   @Override
