@@ -112,6 +112,7 @@ import org.openstreetmap.josm.data.osm.event.PrimitivesRemovedEvent;
 import org.openstreetmap.josm.data.osm.event.RelationMembersChangedEvent;
 import org.openstreetmap.josm.data.osm.event.TagsChangedEvent;
 import org.openstreetmap.josm.data.osm.event.WayNodesChangedEvent;
+import org.openstreetmap.josm.data.osm.visitor.OsmPrimitiveVisitor;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.IconToggleButton;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -180,34 +181,67 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private CommandQueueListener commandListener;
   
   private ChangeListener cl = new ChangeListener() {
-    private WayMenuItem lastItem;
+    private OsmPrimitveMenuItem lastItem;
     
     @Override
     public void stateChanged(ChangeEvent e) {
-      if(e.getSource() instanceof WayMenuItem) {
+      if(e.getSource() instanceof OsmPrimitveMenuItem) {
         if(Objects.equals(lastItem, e.getSource())) {
           if(lastItem.waySegment != null) {
             MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
           }
+          else if(lastItem.osmPrimitve instanceof Relation) {
+            Relation r = (Relation)lastItem.osmPrimitve;
+            
+            for(int i = 0; i < r.getMembersCount(); i++) {
+              RelationMember m = r.getMember(i);
+              
+              if(m.getType() == OsmPrimitiveType.WAY || m.getType() == OsmPrimitiveType.NODE) {
+                m.getMember().setHighlighted(false);
+              }
+            }
+          }
           else {
-            lastItem.way.setHighlighted(false);
+            lastItem.osmPrimitve.setHighlighted(false);
           }
           
           lastItem = null;
         }
         else {
-          lastItem = (WayMenuItem)e.getSource();
+          lastItem = (OsmPrimitveMenuItem)e.getSource();
           
           if(lastItem.waySegment != null) {
             MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(lastItem.waySegment));
           }
+          else if(lastItem.osmPrimitve instanceof Relation) {
+            Relation r = (Relation)lastItem.osmPrimitve;
+            
+            for(int i = 0; i < r.getMembersCount(); i++) {
+              RelationMember m = r.getMember(i);
+              
+              if(m.getType() == OsmPrimitiveType.WAY || m.getType() == OsmPrimitiveType.NODE) {
+                m.getMember().setHighlighted(true);
+              }
+            }
+          }
           else {
-            lastItem.way.setHighlighted(true);
+            lastItem.osmPrimitve.setHighlighted(true);
+          }
+        }
+      }
+      else if(lastItem.osmPrimitve instanceof Relation) {
+        Relation r = (Relation)lastItem.osmPrimitve;
+        
+        for(int i = 0; i < r.getMembersCount(); i++) {
+          RelationMember m = r.getMember(i);
+          
+          if(m.getType() == OsmPrimitiveType.WAY || m.getType() == OsmPrimitiveType.NODE) {
+            m.getMember().setHighlighted(false);
           }
         }
       }
       else {
-        lastItem.way.setHighlighted(false);
+        lastItem.osmPrimitve.setHighlighted(false);
         lastItem = null;
       }
     }
@@ -591,15 +625,15 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           ActionListener a = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-              if(e.getSource() instanceof WayMenuItem) {
+              if(e.getSource() instanceof OsmPrimitveMenuItem) {
                 final HashSet<Command> cmds = new HashSet<>(2);
                 
-                cmds.add(new ChangePropertyCommand(n, "direction", ((WayMenuItem)e.getSource()).getText()));
+                cmds.add(new ChangePropertyCommand(n, "direction", ((OsmPrimitveMenuItem)e.getSource()).getText()));
                 cmds.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
                 
-                ((WayMenuItem)e.getSource()).way.setHighlighted(false);
+                ((OsmPrimitveMenuItem)e.getSource()).osmPrimitve.setHighlighted(false);
                 
                  if(wayPointedAt != null) {
                     SwingUtilities.invokeLater(() -> wayPointedAt.setHighlighted(true));
@@ -645,7 +679,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   int d1 = (int)Utils.toDegrees(next.getEastNorth().heading(n.getEastNorth()));
                   int d2 = (int)Utils.toDegrees(prev.getEastNorth().heading(n.getEastNorth()));
                   
-                  WayMenuItem item = new WayMenuItem(w, d1, arrow, "moddleNode");
+                  OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(w, d1, arrow, "moddleNode");
                   item.waySegment = new WaySegment(w, i);
                   item.addActionListener(a);
                   item.addChangeListener(cl);
@@ -656,7 +690,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     return true;
                   }
                   
-                  item = new WayMenuItem(w, d2, arrow, nodePos);
+                  item = new OsmPrimitveMenuItem(w, d2, arrow, nodePos);
                   item.waySegment = new WaySegment(w, i-1);
                   item.addActionListener(a);
                   item.addChangeListener(cl);
@@ -677,7 +711,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               
               lastNodePos = nodePos;
               
-              WayMenuItem item = new WayMenuItem(w, d, arrow, nodePos);
+              OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(w, d, arrow, nodePos);
               item.addActionListener(a);
               item.addChangeListener(cl);
               
@@ -692,7 +726,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           
           if(highways.size() == 2 && sameDirection && (Objects.equals(direction, "forward") || Objects.equals(direction, "backward"))) {
             for(int i = 0; i < 2; i++) {
-              WayMenuItem item = (WayMenuItem)menu.getComponent(i);
+              OsmPrimitveMenuItem item = (OsmPrimitveMenuItem)menu.getComponent(i);
                  
               if(autoSet && (Objects.equals(direction, "forward") && Objects.equals(item.nodePos, "firstNode")) ||
                   (Objects.equals(direction, "backward") && Objects.equals(item.nodePos, "lastNode"))) {
@@ -1314,6 +1348,15 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       if(Conf.isDirectionEnabled()) {
         Collection<Node> nodes = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes();
         Collection<Way> waysSelected = OsmDataManager.getInstance().getActiveDataSet().getSelectedWays();
+        Collection<Relation> relationsSelected = OsmDataManager.getInstance().getActiveDataSet().getSelectedRelations();
+        ArrayList<Relation> buildingRelationsSelected = new ArrayList<>();
+        
+        for(Relation r : relationsSelected) {
+          if(r.isMultipolygon() && (r.hasKey("building") || r.hasKey("building:part"))) {
+            buildingRelationsSelected.add(r);
+          }
+        }
+        
         final Point p = MainApplication.getMap().mapView.getMousePosition(true);
         
         if(nodes.size() == 1) {
@@ -1345,8 +1388,31 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   String key = "direction";
                   
                   String simpleDirection = null;
-                  Stream<Way> waysReffered = n.referrers(Way.class);
                   Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
+                  
+                  ArrayList<OsmPrimitive> buildingsList = new ArrayList<>();
+                  
+                  for(Way w : ways) {
+                    if(w.hasKey("building") || w.hasKey("building:part")) {
+                      buildingsList.add(w);
+                    }
+                    else {
+                      w.visitReferrers(new OsmPrimitiveVisitor() {
+                        @Override
+                        public void visit(Relation r) {
+                          if(r.isMultipolygon() && (r.hasKey("building") || r.hasKey("building:part"))) {
+                            buildingsList.add(r);
+                          }
+                        }
+                        
+                        @Override
+                        public void visit(Way w) {}
+                        
+                        @Override
+                        public void visit(Node n) {}
+                      });
+                    }
+                  }
                   
                   int wayIndex = 0;
                   
@@ -1359,9 +1425,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     }
                   }
                   
-                  if((ways.length == 1 && !ways[0].hasTag("building") && !ways[0].hasTag("building:part")) 
-                      || (ways.length == 2 && !n.hasKey("traffic_sign") && (n.hasTag("highway", "traffic_signals") ||
-                      n.hasTag("highway", "give_way") || n.hasTag("highway", "stop")))) {
+                  if(buildingsList.isEmpty() && ((ways.length == 1) || (ways.length == 2 && !n.hasKey("traffic_sign") && (n.hasTag("highway", "traffic_signals") ||
+                      n.hasTag("highway", "give_way") || n.hasTag("highway", "stop"))))) {
                     Way way = ways[wayIndex];
                     
                     Node prev = null;
@@ -1401,8 +1466,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       simpleDirection = getSimpleDirection(Utils.toDegrees(prev.getEastNorth().heading(next.getEastNorth())), test);
                     }
                   }
-                  else if(Conf.isRoofDirectionFromNodeEnabled() && ways.length == waysReffered.filter(w -> (w.hasTag("building") || w.hasTag("building:part"))).count()) {
-                    if(ways.length > 1) {
+                  else if(Conf.isRoofDirectionFromNodeEnabled() && !buildingsList.isEmpty()) {
+                    if(buildingsList.size() > 1) {
                       JLabel label = new JLabel("roof:direction "+tr("for")+":");
                       label.setAlignmentX(JLabel.CENTER_ALIGNMENT);
                       
@@ -1413,20 +1478,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       ActionListener b = new ActionListener() {
                         @Override
                         public void actionPerformed(ActionEvent e) {
-                          UndoRedoHandler.getInstance().add(new ChangePropertyCommand(((WayMenuItem)e.getSource()).way, "roof:direction", ((WayMenuItem)e.getSource()).getName()));
+                          UndoRedoHandler.getInstance().add(new ChangePropertyCommand(((OsmPrimitveMenuItem)e.getSource()).osmPrimitve, "roof:direction", ((OsmPrimitveMenuItem)e.getSource()).getName()));
                           
-                          ((WayMenuItem)e.getSource()).way.setHighlighted(false);
-                          OsmDataManager.getInstance().getActiveDataSet().setSelected(((WayMenuItem)e.getSource()).way);
+                          ((OsmPrimitveMenuItem)e.getSource()).osmPrimitve.setHighlighted(false);
+                          OsmDataManager.getInstance().getActiveDataSet().setSelected(((OsmPrimitveMenuItem)e.getSource()).osmPrimitve);
                         }
                       };
-                      
-                      for(int i = 0; i < ways.length; i++) {
-                        WayMenuItem item = new WayMenuItem(ways[i], a, arrow, "");
+                                            
+                      for(int i = 0; i < buildingsList.size(); i++) {
+                        OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(buildingsList.get(i), a, arrow, "");
                         
                         item.setText(tr("Building {0} ", i+1));
                         item.setName(angle.get());
                         item.addActionListener(b);
                         item.addChangeListener(cl);
+                        
                         menu.add(item);
                       }
                       
@@ -1434,9 +1500,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       
                       menu.show(MainApplication.getMap().mapView, p1.x, p1.y);
                     }
-                    else {
-                      UndoRedoHandler.getInstance().add(new ChangePropertyCommand(ways[0], "roof:direction", String.valueOf(test)));
-                      OsmDataManager.getInstance().getActiveDataSet().setSelected(ways[0]);
+                    else if(!buildingsList.isEmpty()) {
+                      UndoRedoHandler.getInstance().add(new ChangePropertyCommand(buildingsList.get(0), "roof:direction", String.valueOf(test)));
+                      OsmDataManager.getInstance().getActiveDataSet().setSelected(buildingsList.get(0));
                     }
                     
                     return;
@@ -1512,13 +1578,67 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             nfe.printStackTrace();
           }
         }
-        else if(nodes.isEmpty() && waysSelected.size() == 1) {
-          Way w = waysSelected.stream().findFirst().get();
+        else if(nodes.isEmpty() && ((waysSelected.size() == 1 && buildingRelationsSelected.size() == 0) || 
+            (waysSelected.size() == 0 && buildingRelationsSelected.size() == 1))) {
+          ArrayList<OsmPrimitive> buildingsList = new ArrayList<>();
           
-          if(w.isClosed() && (w.hasKey("building") || w.hasKey("building:part"))) {
-            int test = (int)Math.round(Utils.toDegrees(Geometry.getCentroid(w.getNodes()).heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
+          if(buildingRelationsSelected.size() == 1) {
+            buildingsList.add(buildingRelationsSelected.get(0));
+          }
+          else {
+            Way w = waysSelected.stream().findFirst().get();
             
-            UndoRedoHandler.getInstance().add(new ChangePropertyCommand(w, "roof:direction", String.valueOf(test)));
+            w.visitReferrers(new OsmPrimitiveVisitor() {
+              @Override
+              public void visit(Relation r) {
+                if(r.isMultipolygon() && (r.hasKey("building") || r.hasKey("building:part"))) {
+                  buildingsList.add(r);
+                }
+              }
+              
+              @Override
+              public void visit(Way w) {}
+              @Override
+              public void visit(Node n) {}
+            });
+            
+            if(buildingsList.isEmpty() && (w.hasKey("building") || w.hasKey("building:part"))) {
+              buildingsList.add(w);
+            }
+          }
+          
+          if(!buildingsList.isEmpty()) {
+            OsmPrimitive op = buildingsList.get(0);
+            
+            ArrayList<Node> nodeList = new ArrayList<>();
+            
+            if(op instanceof Relation) {
+              for(int i = 0; i < ((Relation)op).getMembersCount(); i++) {
+                if(Objects.equals(((Relation)op).getRole(i), "outer")) {
+                  RelationMember m = ((Relation)op).getMember(i);
+                  
+                  if(m.getType() == OsmPrimitiveType.WAY) {
+                    nodeList.addAll(m.getWay().getNodes());
+                  }
+                  else if(m.getType() == OsmPrimitiveType.NODE) {
+                    nodeList.add(m.getNode());
+                  }
+                }
+              }
+            }
+            else {
+              nodeList.addAll(((Way)op).getNodes());
+            }
+            
+            if(!nodeList.isEmpty()) {
+              int test = (int)Math.round(Utils.toDegrees(Geometry.getCentroid(nodeList).heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
+              
+              UndoRedoHandler.getInstance().add(new ChangePropertyCommand(op, "roof:direction", String.valueOf(test)));
+              
+              if(op instanceof Relation) {
+                OsmDataManager.getInstance().getActiveDataSet().setSelected(op);
+              }
+            }
           }
         }
       }
@@ -1846,13 +1966,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
   }
   
-  private static final class WayMenuItem extends JMenuItem {
-    private Way way;
+  private static final class OsmPrimitveMenuItem extends JMenuItem {
+    private OsmPrimitive osmPrimitve;
     private WaySegment waySegment;
     private String nodePos;
     
-    public WayMenuItem(Way way, int heading, ImageIcon arrow, String nodePos) {
-      this.way = way;
+    public OsmPrimitveMenuItem(OsmPrimitive way, int heading, ImageIcon arrow, String nodePos) {
+      this.osmPrimitve = way;
       this.nodePos = nodePos;
       
       setText(getDirectionFromHeading(heading));
