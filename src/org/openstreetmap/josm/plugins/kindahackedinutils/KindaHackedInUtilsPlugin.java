@@ -26,6 +26,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.geom.Area;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -187,61 +188,16 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     public void stateChanged(ChangeEvent e) {
       if(e.getSource() instanceof OsmPrimitveMenuItem) {
         if(Objects.equals(lastItem, e.getSource())) {
-          if(lastItem.waySegment != null) {
-            MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
-          }
-          else if(lastItem.osmPrimitve instanceof Relation) {
-            Relation r = (Relation)lastItem.osmPrimitve;
-            
-            for(int i = 0; i < r.getMembersCount(); i++) {
-              RelationMember m = r.getMember(i);
-              
-              if(m.getType() == OsmPrimitiveType.WAY || m.getType() == OsmPrimitiveType.NODE) {
-                m.getMember().setHighlighted(false);
-              }
-            }
-          }
-          else {
-            lastItem.osmPrimitve.setHighlighted(false);
-          }
-          
+          lastItem.setHighlighted(false);
           lastItem = null;
         }
         else {
           lastItem = (OsmPrimitveMenuItem)e.getSource();
-          
-          if(lastItem.waySegment != null) {
-            MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(lastItem.waySegment));
-          }
-          else if(lastItem.osmPrimitve instanceof Relation) {
-            Relation r = (Relation)lastItem.osmPrimitve;
-            
-            for(int i = 0; i < r.getMembersCount(); i++) {
-              RelationMember m = r.getMember(i);
-              
-              if(m.getType() == OsmPrimitiveType.WAY || m.getType() == OsmPrimitiveType.NODE) {
-                m.getMember().setHighlighted(true);
-              }
-            }
-          }
-          else {
-            lastItem.osmPrimitve.setHighlighted(true);
-          }
-        }
-      }
-      else if(lastItem.osmPrimitve instanceof Relation) {
-        Relation r = (Relation)lastItem.osmPrimitve;
-        
-        for(int i = 0; i < r.getMembersCount(); i++) {
-          RelationMember m = r.getMember(i);
-          
-          if(m.getType() == OsmPrimitiveType.WAY || m.getType() == OsmPrimitiveType.NODE) {
-            m.getMember().setHighlighted(false);
-          }
+          lastItem.setHighlighted(true);
         }
       }
       else {
-        lastItem.osmPrimitve.setHighlighted(false);
+        lastItem.setHighlighted(false);
         lastItem = null;
       }
     }
@@ -298,7 +254,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 lastEvent = null;
                 previouseEvent = null;
-
+                
                 if(use != null) {
                   if(use.getPrimitive() instanceof Node) {
                     SwingUtilities.invokeLater(() -> changeDirectionForTrafficSign(use.getPrimitives(), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled()));
@@ -346,17 +302,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 if(test.isPresent()) {
                   Way newWay = (Way)test.get();
                   
-                  AtomicReference<Node> changed = new AtomicReference<>();
+                  final HashSet<Node> changed = new HashSet<>();
                   
-                  if(newWay.getNodesCount() > 0 && (newWay.getNode(0) == toUse.getNode(0) || newWay.getNode(0) == toUse.getNode(toUse.getNodesCount()-1))) {
-                    changed.set(newWay.getNode(0));
+                  if(newWay.getNodesCount() > 0) {
+                    changed.add(newWay.getNode(0));
                   }
-                  else if(newWay.getNodesCount() > 0 && (newWay.getNode(newWay.getNodesCount()-1) == toUse.getNode(0) || newWay.getNode(newWay.getNodesCount()-1) == toUse.getNode(toUse.getNodesCount()-1))) {
-                    changed.set(newWay.getNode(1));
+                  if(newWay.getNodesCount() > 1) {
+                    changed.add(newWay.getNode(newWay.getNodesCount()-1));
                   }
                   
-                  if(changed.get() != null) {
-                    SwingUtilities.invokeLater(() -> changeDirectionForTrafficSign(Collections.singletonList(changed.get()), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled()));
+                  if(!changed.isEmpty()) {
+                    SwingUtilities.invokeLater(() -> {
+                      for(Node n : changed) {
+                        changeDirectionForTrafficSign(Collections.singleton(n), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled());
+                      }
+                    });
                   }
                 }
               }
@@ -633,7 +593,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
                 
-                ((OsmPrimitveMenuItem)e.getSource()).osmPrimitve.setHighlighted(false);
+                ((OsmPrimitveMenuItem)e.getSource()).setHighlighted(false);
                 
                  if(wayPointedAt != null) {
                     SwingUtilities.invokeLater(() -> wayPointedAt.setHighlighted(true));
@@ -1363,44 +1323,46 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           try {
             final boolean objectSpecificDirection = Conf.isObjectSpecificDirection();
             
-            nodes.forEach(n -> {
-              if(p != null) {
-                Way pointedTo = MainApplication.getMap().mapView.getNearestWay(p, OsmPrimitive::isSelectable);
+            Node n = nodes.stream().findFirst().get();
+            
+            if(p != null) {
+              Way pointedTo = MainApplication.getMap().mapView.getNearestWay(p, OsmPrimitive::isSelectable);
+              
+              if(pointedTo != null && !pointedTo.isHighlighted()) {
+                pointedTo = null;
+              }
+              
+              if(!changeDirectionForTrafficSign(Collections.singletonList(n), true, pointedTo, objectSpecificDirection, true)) {
+                int test = (int)Math.round(Utils.toDegrees(n.getEastNorth().heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
+                int a = test;
                 
-                if(pointedTo != null && !pointedTo.isHighlighted()) {
-                  pointedTo = null;
+                if(Conf.isNaturalDirection() && (isSpecialDirectionNode(n) || Objects.equals("traffic_signals", n.get("highway")))) {
+                  a += 180;
+                  
+                  if(a >= 360) {
+                    a -= 360;
+                  }
                 }
                 
-                if(!changeDirectionForTrafficSign(Collections.singletonList(n), true, pointedTo, objectSpecificDirection, true)) {
-                  int test = (int)Math.round(Utils.toDegrees(n.getEastNorth().heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
-                  int a = test;
-                  
-                  if(Conf.isNaturalDirection() && (isSpecialDirectionNode(n) || Objects.equals("traffic_signals", n.get("highway")))) {
-                    a += 180;
-                    
-                    if(a >= 360) {
-                      a -= 360;
-                    }
-                  }
-                  
-                  AtomicReference<String> angle = new AtomicReference<String>(getDirectionFromHeading(a));
-                  
-                  String key = "direction";
-                  
-                  String simpleDirection = null;
-                  Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
-                  
-                  ArrayList<OsmPrimitive> buildingsList = new ArrayList<>();
-                  
+                AtomicReference<String> angle = new AtomicReference<String>(getDirectionFromHeading(a));
+                
+                String key = "direction";
+                
+                String simpleDirection = null;
+                Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
+                
+                ArrayList<OsmPrimitive> buildingsList = new ArrayList<>();
+                
+                if(Conf.isRoofDirectionFromNodeEnabled()) {
                   for(Way w : ways) {
-                    if(w.hasKey("building") || w.hasKey("building:part")) {
+                    if(w.hasKey("building", "building:part")) {
                       buildingsList.add(w);
                     }
                     else {
                       w.visitReferrers(new OsmPrimitiveVisitor() {
                         @Override
                         public void visit(Relation r) {
-                          if(r.isMultipolygon() && (r.hasKey("building") || r.hasKey("building:part"))) {
+                          if(r.isMultipolygon() && r.hasKey("building", "building:part")) {
                             buildingsList.add(r);
                           }
                         }
@@ -1413,167 +1375,196 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       });
                     }
                   }
-                  
-                  int wayIndex = 0;
-                  
-                  if((ways.length == 2 && n.hasTag("highway", "traffic_signals"))) {
-                    for(int i = 0; i < ways.length; i++) {
-                      if(n == ways[i].getNode(0)) {
-                        wayIndex = i;
-                        break;
-                      }
-                    }
-                  }
-                  
-                  if(buildingsList.isEmpty() && ((ways.length == 1) || (ways.length == 2 && !n.hasKey("traffic_sign") && (n.hasTag("highway", "traffic_signals") ||
-                      n.hasTag("highway", "give_way") || n.hasTag("highway", "stop"))))) {
-                    Way way = ways[wayIndex];
-                    
-                    Node prev = null;
-                    Node next = null;
-                    Node last = null;
-                    
-                    for(int i = 0; i < way.getNodesCount(); i++) {
-                      if(way.getNode(i).equals(n)) {
-                        prev = last;
-                        
-                        if(i+1 < way.getNodesCount()) {
-                          next = way.getNode(i+1);
-                        }
-                        
-                        break;
-                      }
-                      
-                      last = way.getNode(i);
-                    }
-                    
-                    if(pointedTo != null && pointedTo.containsNode(n) && next != null && prev != null) {
-                      WaySegment segmentPointed = MainApplication.getMap().mapView.getNearestWaySegment(p, o -> o.hasKey("highway"));
-                      
-                      if(segmentPointed != null && way.isHighlighted() && segmentPointed.getWay() == way && segmentPointed.getSecondNode() == n) {
-                        next = null;
-                      }
-                    }
-                    
-                    if(next == null) {
-                      next = n;
-                    }
-                    else {
-                      prev = n;
-                    }
-                    
-                    if(prev != null) {
-                      simpleDirection = getSimpleDirection(Utils.toDegrees(prev.getEastNorth().heading(next.getEastNorth())), test);
-                    }
-                  }
-                  else if(Conf.isRoofDirectionFromNodeEnabled() && !buildingsList.isEmpty()) {
-                    if(buildingsList.size() > 1) {
-                      JLabel label = new JLabel("roof:direction "+tr("for")+":");
-                      label.setAlignmentX(JLabel.CENTER_ALIGNMENT);
-                      
-                      JPopupMenu menu = new JPopupMenu();
-                      menu.add(label);
-                      menu.addSeparator();
-                      
-                      ActionListener b = new ActionListener() {
-                        @Override
-                        public void actionPerformed(ActionEvent e) {
-                          UndoRedoHandler.getInstance().add(new ChangePropertyCommand(((OsmPrimitveMenuItem)e.getSource()).osmPrimitve, "roof:direction", ((OsmPrimitveMenuItem)e.getSource()).getName()));
-                          
-                          ((OsmPrimitveMenuItem)e.getSource()).osmPrimitve.setHighlighted(false);
-                          OsmDataManager.getInstance().getActiveDataSet().setSelected(((OsmPrimitveMenuItem)e.getSource()).osmPrimitve);
-                        }
-                      };
-                                            
-                      for(int i = 0; i < buildingsList.size(); i++) {
-                        OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(buildingsList.get(i), a, arrow, "");
-                        
-                        item.setText(tr("Building {0} ", i+1));
-                        item.setName(angle.get());
-                        item.addActionListener(b);
-                        item.addChangeListener(cl);
-                        
-                        menu.add(item);
-                      }
-                      
-                      Point p1 = MainApplication.getMap().mapView.getPoint(n.getEastNorth());
-                      
-                      menu.show(MainApplication.getMap().mapView, p1.x, p1.y);
-                    }
-                    else if(!buildingsList.isEmpty()) {
-                      UndoRedoHandler.getInstance().add(new ChangePropertyCommand(buildingsList.get(0), "roof:direction", String.valueOf(test)));
-                      OsmDataManager.getInstance().getActiveDataSet().setSelected(buildingsList.get(0));
-                    }
-                    
-                    return;
-                  }
-                  
-                  LinkedList<Command> cmdList = new LinkedList<>();
-                  
-                  boolean isTrafficSign = n.hasKey("traffic_sign");
-                  boolean isTrafficSignals = n.hasTag("highway", "traffic_signals");
-                  boolean isRailwaySignal = n.hasTag("railway", "signal");
-                  boolean isStopSign = n.hasTag("highway","stop");
-                  boolean isGiveWaySign = n.hasTag("highway","give_way");
-                  
-                  if(simpleDirection != null &&
-                      (isTrafficSign || isTrafficSignals || isRailwaySignal || isStopSign || isGiveWaySign) 
-                      && !Objects.equals(ACTION_NAME_DIRECTION_ALTERNATIVE, e.getActionCommand())) {
-                    if(isTrafficSign && (objectSpecificDirection || 
-                        (Conf.isSimpleDirection()))) {
-                      if(objectSpecificDirection) {
-                        key = "traffic_sign:direction";
-                      }
-                      
-                      angle.set(simpleDirection);
-                    }
-                    else if(isTrafficSignals) {
-                      key = "traffic_signals:direction";
-                      angle.set(simpleDirection);
-                    }
-                    else if(isRailwaySignal) {
-                      key = "railway:signal:direction";
-                      angle.set(simpleDirection);                      
-                    }
-                    else if(!n.hasKey("traffic_sign") || isStopSign || isGiveWaySign) {
-                      angle.set(simpleDirection);
-                    }
-                  }
-                  else if(n.hasTag("highway", "street_lamp")) {
-                    key = "light:direction";
-                  }
-                  else if(n.hasTag("manmade", "surveillance")) {
-                    key = "camera:direction";
-                  }
-                  else if(n.hasKey("traffic_sign") && Config.getPref().getBoolean("kindahackedinutils.angleInfoNotShown", true)) {
-                    JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it''s effect is.\nFor example if a street's direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
-                    Config.getPref().putBoolean("kindahackedinutils.angleInfoNotShown", false);
-                  }
+                }
                 
-                  if(Objects.equals("direction", key)) {
-                    cmdList.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
-                    cmdList.add(new ChangePropertyCommand(n, "traffic_signals:direction", null));
-                  }
-                  else if(Objects.equals("traffic_sign:direction", key)) {
-                    cmdList.add(new ChangePropertyCommand(n, "direction", null));
-                    cmdList.add(new ChangePropertyCommand(n, "traffic_signals:direction", null));
-                  }
-                  else if(Objects.equals("traffic_signals:direction", key)) {
-                    cmdList.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
-                    cmdList.add(new ChangePropertyCommand(n, "direction", null));                    
-                  }
-                  
-                  cmdList.add(new ChangePropertyCommand(n, key, angle.get()));
-                  
-                  UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction", cmdList));
-                  
-                  if(pointedTo != null) {
-                    final Way toHighlight = pointedTo;
-                    SwingUtilities.invokeLater(() -> toHighlight.setHighlighted(true));
+                int wayIndex = 0;
+                
+                if((ways.length == 2 && n.hasTag("highway", "traffic_signals"))) {
+                  for(int i = 0; i < ways.length; i++) {
+                    if(n == ways[i].getNode(0)) {
+                      wayIndex = i;
+                      break;
+                    }
                   }
                 }
+                
+                if(buildingsList.isEmpty() && ((ways.length == 1) || (ways.length == 2 && !n.hasKey("traffic_sign") && 
+                    n.hasTag("highway", "traffic_signals", "give_way", "stop")))) {
+                  Way way = ways[wayIndex];
+                  
+                  Node prev = null;
+                  Node next = null;
+                  Node last = null;
+                  
+                  for(int i = 0; i < way.getNodesCount(); i++) {
+                    if(way.getNode(i).equals(n)) {
+                      prev = last;
+                      
+                      if(i+1 < way.getNodesCount()) {
+                        next = way.getNode(i+1);
+                      }
+                      
+                      break;
+                    }
+                    
+                    last = way.getNode(i);
+                  }
+                  
+                  if(pointedTo != null && pointedTo.containsNode(n) && next != null && prev != null) {
+                    WaySegment segmentPointed = MainApplication.getMap().mapView.getNearestWaySegment(p, o -> o.hasKey("highway"));
+                    
+                    if(segmentPointed != null && way.isHighlighted() && segmentPointed.getWay() == way && segmentPointed.getSecondNode() == n) {
+                      next = null;
+                    }
+                  }
+                  
+                  if(next == null) {
+                    next = n;
+                  }
+                  else {
+                    prev = n;
+                  }
+                  
+                  if(prev != null) {
+                    simpleDirection = getSimpleDirection(Utils.toDegrees(prev.getEastNorth().heading(next.getEastNorth())), test);
+                  }
+                }
+                else if(!buildingsList.isEmpty()) {
+                  if(buildingsList.size() > 1 || (n.hasTag("generator:source", "solar") && buildingsList.size() >= 1)) {
+                    JLabel label = new JLabel("roof:direction="+angle.get()+" "+tr("for")+":");
+                    label.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+                    
+                    JPopupMenu menu = new JPopupMenu();
+                    menu.add(label);
+                    
+                    ActionListener b = new ActionListener() {
+                      @Override
+                      public void actionPerformed(ActionEvent e) {
+                        ((OsmPrimitveMenuItem)e.getSource()).changeTags();
+                      }
+                    };
+                                          
+                    for(int i = 0; i < buildingsList.size(); i++) {
+                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(buildingsList.get(i), a, arrow, "");
+                      
+                      item.setText(tr("Building {0} ", i+1));
+                      item.setName(angle.get());
+                      item.addActionListener(b);
+                      item.addChangeListener(cl);
+                      
+                      menu.add(item);
+                    }
+                    
+                    if(buildingsList.size() > 1) {
+                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(buildingsList, a, arrow, "");
+                      
+                      item.setText(tr("All Buildings"));
+                      item.setName(angle.get());
+                      item.addActionListener(b);
+                      item.addChangeListener(cl);
+                      
+                      menu.add(item);
+                    }
+                    
+                    if(n.hasTag("generator:source", "solar")) {
+                      menu.addSeparator();
+                      
+                      label = new JLabel("direction="+angle.get()+" "+tr("for")+":");
+                      label.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+                      menu.add(label);
+                      
+                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(n, a, arrow, "");
+                      
+                      item.setText("Solar");
+                      item.setName(angle.get());
+                      item.addActionListener(b);
+                      item.addChangeListener(cl);
+                      
+                      menu.add(item);
+                      
+                      menu.addSeparator();
+                      
+                      List<OsmPrimitive> allList = buildingsList.subList(0, buildingsList.size());
+                      allList.add(n);
+                      
+                      item = new OsmPrimitveMenuItem(allList, a, arrow, "");
+                      
+                      item.setText(tr("{0} for all objects", angle.get()));
+                      item.setName(angle.get());
+                      item.addActionListener(b);
+                      item.addChangeListener(cl);
+                      
+                      menu.add(item);
+                    }
+                    
+                    Point p1 = MainApplication.getMap().mapView.getPoint(n.getEastNorth());
+                    
+                    menu.show(MainApplication.getMap().mapView, p1.x, p1.y);
+                  }
+                  else if(!buildingsList.isEmpty()) {
+                    UndoRedoHandler.getInstance().add(new ChangePropertyCommand(buildingsList.get(0), "roof:direction", String.valueOf(test)));
+                    OsmDataManager.getInstance().getActiveDataSet().setSelected(buildingsList.get(0));
+                  }
+                  
+                  return;
+                }
+                
+                LinkedList<Command> cmdList = new LinkedList<>();
+                
+                boolean isTrafficSign = n.hasKey("traffic_sign");
+                boolean isTrafficSignals = n.hasTag("highway", "traffic_signals");
+                boolean isRailwaySignal = n.hasTag("railway", "signal");
+                boolean isStopSign = n.hasTag("highway","stop");
+                boolean isGiveWaySign = n.hasTag("highway","give_way");
+                
+                if(simpleDirection != null &&
+                    (isTrafficSign || isTrafficSignals || isRailwaySignal || isStopSign || isGiveWaySign) 
+                    && !Objects.equals(ACTION_NAME_DIRECTION_ALTERNATIVE, e.getActionCommand())) {
+                  if(isTrafficSign && (objectSpecificDirection || 
+                      (Conf.isSimpleDirection()))) {
+                    if(objectSpecificDirection) {
+                      key = "traffic_sign:direction";
+                    }
+                    
+                    angle.set(simpleDirection);
+                  }
+                  else if(isTrafficSignals) {
+                    key = "traffic_signals:direction";
+                    angle.set(simpleDirection);
+                  }
+                  else if(isRailwaySignal) {
+                    key = "railway:signal:direction";
+                    angle.set(simpleDirection);                      
+                  }
+                  else if(!n.hasKey("traffic_sign") || isStopSign || isGiveWaySign) {
+                    angle.set(simpleDirection);
+                  }
+                }
+                else if(n.hasTag("highway", "street_lamp")) {
+                  key = "light:direction";
+                }
+                else if(n.hasTag("manmade", "surveillance")) {
+                  key = "camera:direction";
+                }
+                else if(n.hasKey("traffic_sign") && Config.getPref().getBoolean("kindahackedinutils.angleInfoNotShown", true)) {
+                  JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it''s effect is.\nFor example if a street's direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
+                  Config.getPref().putBoolean("kindahackedinutils.angleInfoNotShown", false);
+                }
+              
+                if(DirectionKeyCommands.isDirection(key)) {
+                  DirectionKeyCommands.addRemoveCommandsToList(key, n, cmdList);
+                }
+                
+                cmdList.add(new ChangePropertyCommand(n, key, angle.get()));
+                
+                UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction", cmdList));
+                
+                if(pointedTo != null) {
+                  final Way toHighlight = pointedTo;
+                  SwingUtilities.invokeLater(() -> toHighlight.setHighlighted(true));
+                }
               }
-            });
+            }
           }catch(NumberFormatException nfe) {
             nfe.printStackTrace();
           }
@@ -1591,7 +1582,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             w.visitReferrers(new OsmPrimitiveVisitor() {
               @Override
               public void visit(Relation r) {
-                if(r.isMultipolygon() && (r.hasKey("building") || r.hasKey("building:part"))) {
+                if(r.isMultipolygon() && (r.hasKey("building", "building:part"))) {
                   buildingsList.add(r);
                 }
               }
@@ -1602,7 +1593,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               public void visit(Node n) {}
             });
             
-            if(buildingsList.isEmpty() && (w.hasKey("building") || w.hasKey("building:part"))) {
+            if(buildingsList.isEmpty() && (w.hasKey("building", "building:part"))) {
               buildingsList.add(w);
             }
           }
@@ -1661,6 +1652,22 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
     else {
       return !Conf.isNaturalDirection() && Conf.isOppositeSimpleDirectionEnabled() ? "forward" : "backward";
+    }
+  }
+  
+  private static final class DirectionKeyCommands {
+    private static final List<String> DIRECTION_KEYS = Arrays.asList("direction", "traffic_sign:direction","traffic_signals:direction");
+    
+    public static void addRemoveCommandsToList(String key, OsmPrimitive p, List<Command> cmdList) {
+      for(String dKey : DIRECTION_KEYS) {
+        if(!Objects.equals(dKey, key)) {
+          cmdList.add(new ChangePropertyCommand(p, dKey, null));
+        }
+      }
+    }
+    
+    public static boolean isDirection(String key) {
+      return key != null && DIRECTION_KEYS.contains(key);
     }
   }
   
@@ -1967,18 +1974,60 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   }
   
   private static final class OsmPrimitveMenuItem extends JMenuItem {
-    private OsmPrimitive osmPrimitve;
+    private Collection<OsmPrimitive> osmPrimitives;
     private WaySegment waySegment;
     private String nodePos;
     
-    public OsmPrimitveMenuItem(OsmPrimitive way, int heading, ImageIcon arrow, String nodePos) {
-      this.osmPrimitve = way;
+    public OsmPrimitveMenuItem(Collection<OsmPrimitive> ways, int heading, ImageIcon arrow, String nodePos) {
+      this.osmPrimitives = ways;
       this.nodePos = nodePos;
       
       setText(getDirectionFromHeading(heading));
       
       if(arrow != null) {
         setIcon(new ArrowIcon(arrow,heading));
+      }
+    }
+    
+    public OsmPrimitveMenuItem(OsmPrimitive way, int heading, ImageIcon arrow, String nodePos) {
+      this(Collections.singleton(way), heading, arrow, nodePos);
+    }
+    
+    public void changeTags() {
+      HashSet<Command> cmdList = new HashSet<>();
+      
+      for(OsmPrimitive p : osmPrimitives) {
+        cmdList.add(new ChangePropertyCommand(p, p instanceof Node ? "direction" : "roof:direction", getName()));
+      }
+      
+      UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction keys", cmdList));
+      
+      setHighlighted(false);
+      OsmDataManager.getInstance().getActiveDataSet().setSelected(osmPrimitives);
+    }
+    
+    public void setHighlighted(boolean value) {
+      if(waySegment != null) {
+        if(value) {
+          MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(waySegment));
+        }
+        else {
+          MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
+        }
+      }
+      else {
+        osmPrimitives.forEach(p -> {
+          if(p instanceof Relation) {
+            for(OsmPrimitive op : ((Relation) p).getMemberPrimitives()) {
+              if(op instanceof Way || op instanceof Node) {
+                op.setHighlighted(value);
+              }
+            }
+          }
+          else {
+            p.setHighlighted(value);
+          }
+        });
       }
     }
   }
