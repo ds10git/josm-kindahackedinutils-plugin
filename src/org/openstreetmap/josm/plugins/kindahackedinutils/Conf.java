@@ -9,7 +9,7 @@ public class Conf {
   static final String DIRECTION_SIMPLE = "kindahackedinutils.simpleDirection";
   static final String DIRECTION_NATURAL = "kindahackedinutils.naturalDirection";
   static final String DIRECTION_AUTO_SET = "kindahackedinutils.autoSet";
-  static final String DIRECTION_ROOF_FROM_NODE = "kindahackedinutils.roofDirectionFromNode";
+  static final String DIRECTION_FROM_NODE_FOR_WAYS = "kindahackedinutils.directionFromNodeForWays";
   static final String DIRECTION_SHOW_POPUP = "kindahackedinutils.showPopup";
   static final String DIRECTION_OPPOSITE_SIMPLE = "kindahackedinutils.oppositeSimpleDirection";
   
@@ -103,12 +103,12 @@ public class Conf {
     return Config.getPref().getBoolean(DIRECTION_OPPOSITE_SIMPLE, false);
   }
   
-  static void setRoofDirectionFromNodeEnabled(boolean value) {
-    Config.getPref().putBoolean(DIRECTION_ROOF_FROM_NODE, value);
+  static void setDirectionFromNodeForWaysEnabled(boolean value) {
+    Config.getPref().putBoolean(DIRECTION_FROM_NODE_FOR_WAYS, value);
   }
   
-  public static boolean isRoofDirectionFromNodeEnabled() {
-    return Config.getPref().getBoolean(DIRECTION_ROOF_FROM_NODE, true);
+  public static boolean isDirectionFromNodeForWaysEnabled() {
+    return Config.getPref().getBoolean(DIRECTION_FROM_NODE_FOR_WAYS, true);
   }
 }
 

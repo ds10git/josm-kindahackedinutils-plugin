@@ -29,12 +29,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -1324,7 +1326,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         ArrayList<Relation> buildingRelationsSelected = new ArrayList<>();
         
         for(Relation r : relationsSelected) {
-          if(r.isMultipolygon() && (r.hasKey("building") || r.hasKey("building:part"))) {
+          if(r.isMultipolygon() && DirectionTagMap.getDirectionKeyForPrimitive(r) != null) {
             buildingRelationsSelected.add(r);
           }
         }
@@ -1363,19 +1365,23 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 String simpleDirection = null;
                 Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
                 
-                ArrayList<OsmPrimitive> buildingsList = new ArrayList<>();
+                ArrayList<OsmPrimitive> waysToHandleList = new ArrayList<>();
                 
-                if(Conf.isRoofDirectionFromNodeEnabled()) {
+                if(Conf.isDirectionFromNodeForWaysEnabled()) {
+                  if(DirectionTagMap.getDirectionKeyForPrimitive(n) != null) {
+                    waysToHandleList.add(n);
+                  }
+                  
                   for(Way w : ways) {
-                    if(w.hasKey("building", "building:part")) {
-                      buildingsList.add(w);
+                    if(DirectionTagMap.getDirectionKeyForPrimitive(w) != null) {
+                      waysToHandleList.add(w);
                     }
                     else {
                       w.visitReferrers(new OsmPrimitiveVisitor() {
                         @Override
                         public void visit(Relation r) {
-                          if(r.isMultipolygon() && r.hasKey("building", "building:part")) {
-                            buildingsList.add(r);
+                          if(r.isMultipolygon() && DirectionTagMap.getDirectionKeyForPrimitive(r) != null) {
+                            waysToHandleList.add(r);
                           }
                         }
                         
@@ -1400,7 +1406,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   }
                 }
                 
-                if(buildingsList.isEmpty() && ((ways.length == 1) || (ways.length == 2 && !n.hasKey("traffic_sign") && 
+                if(waysToHandleList.isEmpty() && ((ways.length == 1) || (ways.length == 2 && !n.hasKey("traffic_sign") && 
                     n.hasTag("highway", "traffic_signals", "give_way", "stop")))) {
                   Way way = ways[wayIndex];
                   
@@ -1441,13 +1447,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     simpleDirection = getSimpleDirection(Utils.toDegrees(prev.getEastNorth().heading(next.getEastNorth())), test);
                   }
                 }
-                else if(!buildingsList.isEmpty()) {
-                  if(buildingsList.size() > 1 || (n.hasTag("generator:source", "solar") && buildingsList.size() >= 1)) {
-                    JLabel label = new JLabel("roof:direction="+angle.get()+" "+tr("for")+":");
-                    label.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+                else if(!waysToHandleList.isEmpty()) {
+                  if(waysToHandleList.size() > 1) {
+                    Collections.sort(waysToHandleList, DirectionTagMap.COMPARATOR);
                     
                     JPopupMenu menu = new JPopupMenu();
-                    menu.add(label);
                     
                     ActionListener b = new ActionListener() {
                       @Override
@@ -1455,11 +1459,46 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                         ((OsmPrimitveMenuItem)e.getSource()).changeTags();
                       }
                     };
-                                          
-                    for(int i = 0; i < buildingsList.size(); i++) {
-                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(buildingsList.get(i), a, arrow, "");
+                    
+                    String lastTitle = null;
+                    HashSet<OsmPrimitive> current = new HashSet<>();
+                    boolean showAll = false;
+                    
+                    for(int i = 0; i < waysToHandleList.size(); i++) {
+                      String name = DirectionTagMap.getNameForPrimitive(waysToHandleList.get(i));
                       
-                      item.setText(tr("Building {0} ", i+1));
+                      if(lastTitle == null || !Objects.equals(name, lastTitle)) {
+                        if(!current.isEmpty() && current.size() > 1) {
+                          @SuppressWarnings("unchecked")
+                          OsmPrimitveMenuItem item = new OsmPrimitveMenuItem((HashSet<OsmPrimitive>)current.clone(), a, arrow, "");
+                          
+                          item.setText(DirectionTagMap.getPluralForSingular(lastTitle));
+                          item.setName(angle.get());
+                          item.addActionListener(b);
+                          item.addChangeListener(cl);
+                          
+                          menu.add(item);
+                        }
+                        
+                        if(lastTitle != null) {
+                          menu.addSeparator();
+                          showAll = true;
+                        }
+                        
+                        JLabel label = new JLabel(DirectionTagMap.getDirectionKeyForPrimitive(waysToHandleList.get(i)) + "="+angle.get()+" "+tr("for")+":");
+                        label.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+                        menu.add(label);
+                        
+                        current.clear();
+                      }
+                      
+                      current.add(waysToHandleList.get(i));
+                      
+                      lastTitle = name;
+                       
+                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(waysToHandleList.get(i), a, arrow, "");
+                      
+                      item.setText(name.replace("{0}", String.valueOf(current.size())));
                       item.setName(angle.get());
                       item.addActionListener(b);
                       item.addChangeListener(cl);
@@ -1467,10 +1506,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       menu.add(item);
                     }
                     
-                    if(buildingsList.size() > 1) {
-                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(buildingsList, a, arrow, "");
+                    if(!current.isEmpty() && current.size() > 1) {
+                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(current, a, arrow, "");
                       
-                      item.setText(tr("All Buildings"));
+                      item.setText(DirectionTagMap.getPluralForSingular(lastTitle));
                       item.setName(angle.get());
                       item.addActionListener(b);
                       item.addChangeListener(cl);
@@ -1478,28 +1517,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       menu.add(item);
                     }
                     
-                    if(n.hasTag("generator:source", "solar")) {
+                    if(showAll) {
                       menu.addSeparator();
                       
-                      label = new JLabel("direction="+angle.get()+" "+tr("for")+":");
-                      label.setAlignmentX(JLabel.CENTER_ALIGNMENT);
-                      menu.add(label);
-                      
-                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(n, a, arrow, "");
-                      
-                      item.setText(tr("Solar"));
-                      item.setName(angle.get());
-                      item.addActionListener(b);
-                      item.addChangeListener(cl);
-                      
-                      menu.add(item);
-                      
-                      menu.addSeparator();
-                      
-                      List<OsmPrimitive> allList = buildingsList.subList(0, buildingsList.size());
-                      allList.add(n);
-                      
-                      item = new OsmPrimitveMenuItem(allList, a, arrow, "");
+                      OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(waysToHandleList, a, arrow, "");
                       
                       item.setText(tr("{0} for all objects", angle.get()));
                       item.setName(angle.get());
@@ -1513,9 +1534,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     
                     menu.show(MainApplication.getMap().mapView, p1.x, p1.y);
                   }
-                  else if(!buildingsList.isEmpty()) {
-                    UndoRedoHandler.getInstance().add(new ChangePropertyCommand(buildingsList.get(0), "roof:direction", String.valueOf(test)));
-                    OsmDataManager.getInstance().getActiveDataSet().setSelected(buildingsList.get(0));
+                  else if(!waysToHandleList.isEmpty()) {
+                    UndoRedoHandler.getInstance().add(new ChangePropertyCommand(waysToHandleList.get(0), DirectionTagMap.getDirectionKeyForPrimitive(waysToHandleList.get(0)), String.valueOf(test)));
+                    OsmDataManager.getInstance().getActiveDataSet().setSelected(waysToHandleList.get(0));
                   }
                   
                   return;
@@ -1594,7 +1615,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             w.visitReferrers(new OsmPrimitiveVisitor() {
               @Override
               public void visit(Relation r) {
-                if(r.isMultipolygon() && (r.hasKey("building", "building:part"))) {
+                if(r.isMultipolygon() && DirectionTagMap.getDirectionKeyForPrimitive(r) != null) {
                   buildingsList.add(r);
                 }
               }
@@ -1605,7 +1626,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               public void visit(Node n) {}
             });
             
-            if(buildingsList.isEmpty() && (w.hasKey("building", "building:part"))) {
+            if(buildingsList.isEmpty() && DirectionTagMap.getDirectionKeyForPrimitive(w) != null) {
               buildingsList.add(w);
             }
           }
@@ -1633,10 +1654,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               nodeList.addAll(((Way)op).getNodes());
             }
             
-            if(!nodeList.isEmpty()) {
-              int test = (int)Math.round(Utils.toDegrees(Geometry.getCentroid(nodeList).heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
-              
-              UndoRedoHandler.getInstance().add(new ChangePropertyCommand(op, "roof:direction", String.valueOf(test)));
+            if(!nodeList.isEmpty() && p != null) {
+              UndoRedoHandler.getInstance().add(new ChangePropertyCommand(op, DirectionTagMap.getDirectionKeyForPrimitive(op), getDirectionFromHeading((int)Math.round(Utils.toDegrees(Geometry.getCentroid(nodeList).heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y)))))));
               
               if(op instanceof Relation) {
                 OsmDataManager.getInstance().getActiveDataSet().setSelected(op);
@@ -1668,7 +1687,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   }
   
   private static final class DirectionKeyCommands {
-    private static final List<String> DIRECTION_KEYS = Arrays.asList("direction", "traffic_sign:direction","traffic_signals:direction");
+    private static final List<String> DIRECTION_KEYS = Arrays.asList("direction","traffic_sign:direction","traffic_signals:direction");
     
     public static void addRemoveCommandsToList(String key, OsmPrimitive p, Collection<Command> cmdList) {
       for(String dKey : DIRECTION_KEYS) {
@@ -1998,7 +2017,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       HashSet<Command> cmdList = new HashSet<>();
       
       for(OsmPrimitive p : osmPrimitives) {
-        cmdList.add(new ChangePropertyCommand(p, p instanceof Node ? "direction" : "roof:direction", getName()));
+        cmdList.add(new ChangePropertyCommand(p, DirectionTagMap.getDirectionKeyForPrimitive(p), getName()));
       }
       
       UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction keys", cmdList));
@@ -2717,6 +2736,84 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             super.setSelectionInterval(index0, index1);
         }
       }
+    }
+  }
+  
+  private static final class DirectionTagMap {
+    static final Comparator<OsmPrimitive> COMPARATOR = new Comparator<OsmPrimitive>() {
+      @Override
+      public int compare(OsmPrimitive o1, OsmPrimitive o2) {
+        String k1 = getDirectionKeyForPrimitive(o1);
+        String k2 = getDirectionKeyForPrimitive(o2);
+        
+        return k1.compareToIgnoreCase(k2);
+      }
+    };
+    
+    private static final String[] keys = new String[] {"building","building:part"};
+    private static final Map<String, String> tags = Map.ofEntries(Map.entry("generator:source", "solar"));
+    
+    private static final Map<String, String> keysToSet = Map.ofEntries(Map.entry("generator:source", "direction"),
+        Map.entry("building", "roof:direction"), Map.entry("building:part", "roof:direction"));
+    
+    private static final Map<String, String> names = Map.ofEntries(Map.entry("generator:source", tr("Solar {0}")),
+        Map.entry("building", tr("Building {0}")), Map.entry("building:part", tr("Building {0}")),
+        Map.entry(tr("Building {0}"),tr("All Buildings")), Map.entry(tr("Solar {0}"),tr("All Solars")));
+    
+    public static String getPluralForSingular(String singular) {
+      return names.get(singular);
+    }
+    
+    public static String getNameForPrimitive(OsmPrimitive p) {
+      String result = null;
+      
+      int i = 0;
+      
+      do {
+        String key = keys[i++];
+        
+        if(p.hasKey(key)) {
+          result = names.get(key);
+        }
+      }while(result == null && i < keys.length);
+      
+      if(result == null) {
+        Set<Map.Entry<String, String>> matching = tags.entrySet().stream().filter(e -> p.hasTag(e.getKey(), e.getValue())).collect(Collectors.toSet());
+        
+        if(matching.size() == 1) {
+          Map.Entry<String, String> key = matching.stream().findFirst().get();
+          
+          result = names.get(key.getKey());
+        }
+      }
+      
+      return result;
+    }
+    
+    public static String getDirectionKeyForPrimitive(OsmPrimitive p) {
+      String result = null;
+      
+      int i = 0;
+      
+      do {
+        String key = keys[i++];
+        
+        if(p.hasKey(key)) {
+          result = keysToSet.get(key);
+        }
+      }while(result == null && i < keys.length);
+      
+      if(result == null) {
+        Set<Map.Entry<String, String>> matching = tags.entrySet().stream().filter(e -> p.hasTag(e.getKey(), e.getValue())).collect(Collectors.toSet());
+        
+        if(matching.size() == 1) {
+          Map.Entry<String, String> key = matching.stream().findFirst().get();
+          
+          result = keysToSet.get(key.getKey());
+        }
+      }
+      
+      return result;
     }
   }
   
