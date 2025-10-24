@@ -579,17 +579,22 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         
         JPopupMenu menu = new JPopupMenu();
         
+        String direction = n.hasKey("direction") ? n.get("direction") : n.hasKey("traffic_sign:direction") ? n.get("traffic_sign:direction") : null;
+        
         if(!highways.isEmpty()) {
-          
-          
           ActionListener a = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
               if(e.getSource() instanceof OsmPrimitveMenuItem) {
                 final HashSet<Command> cmds = new HashSet<>(2);
+                String key = "direction";
                 
-                cmds.add(new ChangePropertyCommand(n, "direction", ((OsmPrimitveMenuItem)e.getSource()).getText()));
-                cmds.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
+                if(Conf.isObjectSpecificDirection()) {
+                  key = "traffic_sign:direction";
+                }
+                
+                cmds.add(new ChangePropertyCommand(n, key, ((OsmPrimitveMenuItem)e.getSource()).getText()));
+                DirectionKeyCommands.addRemoveCommandsToList(key, n, cmds);
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
                 
@@ -608,8 +613,6 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           boolean sameDirection = false;
           
           String lastNodePos = null;
-          String direction = n.hasKey("direction") ? n.get("direction") : n.hasKey("traffic_sign:direction") ? n.get("traffic_sign:direction") : null;
-          
           WaySegment segmentPointed = null;
           
           Point p = MainApplication.getMap().mapView.getMousePosition(true);
@@ -700,23 +703,23 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             return false;
           }
         }
-        else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction") && !Objects.equals("stop", n.get("highway")) && !Objects.equals("give_way", n.get("highway"))) || 
-            (!objectSpecificDirection && n.hasKey("traffic_sign") && !n.hasKey("direction")  && !Objects.equals("stop", n.get("highway")) && !Objects.equals("give_way", n.get("highway"))) ||
-            (!n.hasKey("direction") && (Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway")))))) {
+        else if(!ignoreExistingValue && ways.length == 1 && ((n.hasKey("traffic_sign") && objectSpecificDirection && !n.hasKey("traffic_sign:direction") && !n.hasTag("highway", "stop", "give_way")) || 
+            (!objectSpecificDirection && n.hasKey("traffic_sign") && !n.hasKey("direction")  && !n.hasTag("highway", "stop", "give_way")) ||
+            (!n.hasKey("direction") && n.hasTag("highway", "stop", "give_way")))) {
           ActionListener a = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
               if(e.getSource() instanceof JMenuItem) {
                 final HashSet<Command> cmds = new HashSet<>(2);
                 
-                if(objectSpecificDirection && n.hasKey("traffic_sign")  && !Objects.equals("stop", n.get("highway")) && !Objects.equals("give_way", n.get("highway"))) {
-                  cmds.add(new ChangePropertyCommand(n, "traffic_sign:direction", ((JMenuItem)e.getSource()).getName()));
-                  cmds.add(new ChangePropertyCommand(n, "direction", null));
+                String key = "direction";
+                
+                if(objectSpecificDirection && n.hasKey("traffic_sign") && !n.hasTag("highway","stop","give_way")) {
+                  key = "traffic_sign:direction";
                 }
-                else {
-                  cmds.add(new ChangePropertyCommand(n, "traffic_sign:direction", null));
-                  cmds.add(new ChangePropertyCommand(n, "direction", ((JMenuItem)e.getSource()).getName()));
-                }
+                
+                cmds.add(new ChangePropertyCommand(n, key, ((JMenuItem)e.getSource()).getName()));
+                DirectionKeyCommands.addRemoveCommandsToList(key, n, cmds);
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
                 MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
@@ -777,6 +780,15 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           
           forward.addChangeListener(cl);
           backward.addChangeListener(cl);
+          
+          if(Objects.equals("forward", direction)) {
+            forward.getActionListeners()[0].actionPerformed(new ActionEvent(forward, 0, null));
+            return true;
+          }
+          else if(Objects.equals("backward", direction)) {
+            backward.getActionListeners()[0].actionPerformed(new ActionEvent(backward, 0, null));
+            return true;
+          }
         }
         
         if(Conf.isShowPopupEnabled() && menu.getComponentCount() > 0) {
@@ -1475,7 +1487,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       
                       OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(n, a, arrow, "");
                       
-                      item.setText("Solar");
+                      item.setText(tr("Solar"));
                       item.setName(angle.get());
                       item.addActionListener(b);
                       item.addChangeListener(cl);
@@ -1550,7 +1562,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it''s effect is.\nFor example if a street's direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
                   Config.getPref().putBoolean("kindahackedinutils.angleInfoNotShown", false);
                 }
-              
+                
                 if(DirectionKeyCommands.isDirection(key)) {
                   DirectionKeyCommands.addRemoveCommandsToList(key, n, cmdList);
                 }
@@ -1658,7 +1670,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private static final class DirectionKeyCommands {
     private static final List<String> DIRECTION_KEYS = Arrays.asList("direction", "traffic_sign:direction","traffic_signals:direction");
     
-    public static void addRemoveCommandsToList(String key, OsmPrimitive p, List<Command> cmdList) {
+    public static void addRemoveCommandsToList(String key, OsmPrimitive p, Collection<Command> cmdList) {
       for(String dKey : DIRECTION_KEYS) {
         if(!Objects.equals(dKey, key)) {
           cmdList.add(new ChangePropertyCommand(p, dKey, null));
@@ -1871,17 +1883,6 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         EastNorth add = calculateMove(angle, length);
       
         EastNorth test = way.getNode(i).getEastNorth().add(add.east(), add.north());
-        
-        /*if(way.getNodeId(i) == 288771023 || way.getNodeId(i) == 300678436 || way.getNodeId(i) == 300678384) {
-          EastNorth test2 = way.getNode(i).getEastNorth().add(-add.east(), -add.north());
-          
-          System.out.println(way.getNodeId(i) + " " + angleMeToPrev + " | " + angleMeToNext + " " + angle + " | " + alpha + " | " + length + " | " + add);
-//        EastNorth test = way.getNode(i).getEastNorth().add(add.east() < 0 ? -v : v, add.north() < 0 ? -v : v);
- //       EastNorth test2 = way.getNode(i).getEastNorth().add(add.east() < 0 ? v : -v, add.north() < 0 ? v : -v);
-          
-          System.out.println(area.contains(test.east(), test.north()) + " " + area.contains(test2.east(), test2.north()));
-        }*/
-        
         
         if(!area.contains(test.east(), test.north())) {
           add = new EastNorth(-add.east(), -add.north());
