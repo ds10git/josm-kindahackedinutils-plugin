@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-10-24 21:46+0200\n"
+"POT-Creation-Date: 2025-11-05 17:09+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\\nLanguage: de\n"
@@ -64,30 +64,45 @@ msgstr "Knoten von Wegen trennen und verschieben"
 msgid "Detatch nodes"
 msgstr "Knoten abtrennen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1077
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:913
+msgid ""
+"The selected way lies outside the download area.\n"
+"This might result in different detachments.\n"
+"\n"
+"Do you want to continue anyway?"
+msgstr ""
+"Teile des ausgewählten Wegs liegen außerhalb der heruntergeladenen Bereichs.\n"
+"Dies kann zu unterschiedlichen Ergebnissen des Abtrennens führen.\n\n"
+"Möchten Sie trotzdem fortfahren?"
+
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:913
+msgid "Way outside of download area"
+msgstr "Teile des Wegs außerhalb des heruntergeladenen Bereichs"
+
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1144
 msgid "Create turn restriction or replace selected"
 msgstr "Abbiegebeschränkung erstellen oder ausgewählte ersetzen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1077
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1315
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1144
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1382
 msgid "Get heading for direction from mouse location"
 msgstr "Richtung für direction von Mausposition ermitteln"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1078
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1145
 msgid "Create turn restriction"
 msgstr "Abbiegebeschränkung erstellen"
 
 #
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1158
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1225
 msgid "Undo/redo changes on selected object"
 msgstr "Änderungen am ausgewählten Object rückgängig machen/wiederherstellen"
 
 #
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1159
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1226
 msgid "undo/redo object"
 msgstr "Object rückgängig machen/wiederherstellen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1172
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1239
 msgid ""
 "Enter type and id of object (like ''w12345'' or ''way 12345'' for ways,\n"
 "''n12345'' or ''node 12345'' for nodes, ''r12345'' or ''relation 12345'' for "
@@ -99,24 +114,24 @@ msgstr ""
 "für Relationen)"
 
 #
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1289
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1356
 msgid "No undo commands for selected object found."
 msgstr "Keine Befehle zum Rückgängigmachen des ausgewählten Objekts gefunden."
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1316
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1383
 msgid "Get heading"
 msgstr "Richtung ermitteln"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1488
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1555
 msgid "for"
 msgstr "für"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1525
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1592
 #, java-format
 msgid "{0} for all objects"
 msgstr "{0} für alle Objekte"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1583
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:1650
 msgid ""
 "Note that the direction for a traffic sign is opposite of the direction "
 "it''s effect is.\n"
@@ -135,43 +150,43 @@ msgstr ""
 "Wenn natürliche Richtung aktiviert ist wird die korrekte Richtung durch "
 "Positionierung der Maus hinter dem Schild in Richtung der Straße ermittelt."
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2063
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2133
 msgid "Turn restriction type"
 msgstr "Typ der Abbiegebeschränkung"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2063
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2133
 msgid "OK"
 msgstr ""
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2063
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2390
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2133
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2460
 msgid "Cancel"
 msgstr ""
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2119
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2189
 msgid "only for:"
 msgstr "Nur für:"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2140
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2210
 msgid "except:"
 msgstr "Ausnahme für:"
 
 #
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2390
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2460
 msgid "Select undo/redo command to undo/redo until"
 msgstr ""
 "Befehl bis zu dem Änderungen rückgängig gemacht/wiederhergestellt werden "
 "sollen auswählen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2390
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2460
 msgid "Undo"
 msgstr ""
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2390
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2460
 msgid "Redo"
 msgstr ""
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2436
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2506
 msgid ""
 "<html>Select the command that you want to be undone/redone, all later "
 "commands will also be undone/redone.<br><br>The list is sorted from last at "
@@ -186,24 +201,24 @@ msgstr ""
 "Rückgängigmachen für das ausgewählte Objekt, auch wenn diese bereits zuvor "
 "rückgängig gemacht wurden.</html>"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2561
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2631
 msgid "Select objects to add to relation again"
 msgstr "Objekte auswählten, die erneut zur Relation hinzugefügt werden sollen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2561
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2581
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2631
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2651
 msgid "Add all"
 msgstr "Alle hinzufügen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2561
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2631
 msgid "Add selected"
 msgstr "Ausgewählte hinzufügen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2561
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2631
 msgid "Don''t add again"
 msgstr "Nicht erneut hinzufügen"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2581
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2651
 #, java-format
 msgid ""
 "<html><p>The following objects are already members of the relation.</"
@@ -215,23 +230,23 @@ msgstr ""
 "sollen oder betätigen Sie <b>{0}</b>.</p><br><p>(Die Liste verwendet "
 "Einfachklick und Klick-Ziehen für das Auswählen.)</p></html>"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2759
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2761
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2829
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2831
 #, java-format
 msgid "Solar {0}"
 msgstr "Solar {0}"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2760
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2761
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2830
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2831
 #, java-format
 msgid "Building {0}"
 msgstr "Gebäude {0} "
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2761
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2831
 msgid "All Buildings"
 msgstr "Alle Gebäude"
 
-#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2761
+#: ../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java:2831
 msgid "All Solars"
 msgstr "Alle Solar"
 
@@ -318,32 +333,32 @@ msgstr "Fenster: {0}"
 msgid "Quick Relation Selection mouse pointing highlighting color"
 msgstr "Farbe für Maushervorhebung für Relation-Schnellauswahl"
 
-#~ msgid "hgv"
-#~ msgstr "LKW"
+msgid "hgv"
+msgstr "LKW"
 
-#~ msgid "caravan"
-#~ msgstr "Wohnmobil"
+msgid "caravan"
+msgstr "Wohnmobil"
 
-#~ msgid "motorcar"
-#~ msgstr "Auto"
+msgid "motorcar"
+msgstr "Auto"
 
-#~ msgid "bus"
-#~ msgstr "Bus"
+msgid "bus"
+msgstr "Bus"
 
-#~ msgid "agricultural"
-#~ msgstr "Landwirtschaftlich"
+msgid "agricultural"
+msgstr "Landwirtschaftlich"
 
-#~ msgid "motorcycle"
-#~ msgstr "Motorrad"
+msgid "motorcycle"
+msgstr "Motorrad"
 
-#~ msgid "bicycle"
-#~ msgstr "Fahrrad"
+msgid "bicycle"
+msgstr "Fahrrad"
 
-#~ msgid "hazmat"
-#~ msgstr "Gefahrgut"
+msgid "hazmat"
+msgstr "Gefahrgut"
 
-#~ msgid "psv"
-#~ msgstr "Linienverkehr"
+msgid "psv"
+msgstr "Linienverkehr"
 
-#~ msgid "emergency"
-#~ msgstr "Rettungsfahrzeuge"
+msgid "emergency"
+msgstr "Rettungsfahrzeuge"

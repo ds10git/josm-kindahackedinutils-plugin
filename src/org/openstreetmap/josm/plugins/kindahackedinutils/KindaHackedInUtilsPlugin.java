@@ -907,8 +907,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       LinkedList<Command> cmds = new LinkedList<>();
       Hashtable<Node,LinkedList<Node>> replacement = new Hashtable<>();
       Hashtable<Way,LinkedList<NodePair>> newNodesTable = new Hashtable<>();
+      HashSet<Node> replaceNodeSet = new HashSet<>();
       
       for(Way w : selectedWays) {
+        if(w.isOutsideDownloadArea() && JOptionPane.YES_OPTION != JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("The selected way lies outside the download area.\nThis might result in different detachments.\n\nDo you want to continue anyway?"), tr("Way outside of download area"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)) {
+          return;
+        }
+        
         if(w.isClosed()) {
           LinkedList<Command> cmds1 = new LinkedList<>();
           
@@ -981,6 +986,12 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     replacement.put(cur, nodeList);
                   }
                   
+                  int index = way.getIndexForNode(cur);
+                  
+                  if(checkForReplacement(getNewNode(way.findPreviouseNodeForIndex(index), cur, way, replaceNodeSet, ds, cmds), getNewNode(way.findNextNodeForIndex(index), cur, way, replaceNodeSet, ds, cmds), cur, nodeList, nodePairs)) {
+                    continue;
+                  }
+                  
                   Node newNode = new Node(cur.getEastNorth().add(way.getAddValueForNode(cur)));
                   boolean found = false;
                   
@@ -991,11 +1002,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                       break;
                     }
                   }
-                  
+                    
                   if(!found) {
                     cmds.add(new AddCommand(ds, newNode));
                     nodeList.add(newNode);
-                    nodePairs.add(new NodePair(cur, newNode));
+                    nodePairs.add(new NodePair(cur, newNode));  
                   }
                 }
               }
@@ -1006,21 +1017,27 @@ public class KindaHackedInUtilsPlugin extends Plugin {
 
       if(!replacement.isEmpty()) {
         for(Way way : newNodesTable.keySet()) {
-          LinkedList<Node> newNodes = new LinkedList<Node>();
-          HashSet<Node> toRemove = new HashSet<Node>();
-          LinkedList<NodePair> list = newNodesTable.get(way);
+          final LinkedList<Node> newNodes = new LinkedList<Node>();
+          final HashSet<Node> toRemove = new HashSet<Node>();
+          final LinkedList<NodePair> list = newNodesTable.get(way);
           
-          for(int i = 0; i < way.getNodesCount(); i++) {
+          for(int i = 0; i < way.getRealNodesCount(); i++) {
             final Node node = way.getNode(i);
             
             if(list != null) {
-              Optional<NodePair> pair = list.stream().filter(n -> n.containsOldNode(node)).findFirst();
+              AtomicBoolean found = new AtomicBoolean();
+              list.forEach(n -> {
+                if(n.containsOldNode(node)) {
+                  if(!toRemove.contains(node)) {
+                    toRemove.add(node);
+                  }
+                  
+                  newNodes.add(n.newNode);
+                  found.set(true);
+                }
+              });
               
-              if(pair.isPresent()) {
-                toRemove.add(node);
-                newNodes.add(pair.get().newNode);
-              }
-              else {
+              if(!found.get()) {
                 newNodes.add(node);
               }
             } 
@@ -1028,6 +1045,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               newNodes.add(node);
             }
           }
+          
+          newNodes.add(newNodes.get(0));
           
           if(!toRemove.isEmpty()) {
             cmds.add(0, new RemoveNodesCommand(way, toRemove));
@@ -1056,6 +1075,56 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             return;
         }
         setEnabled(Conf.isDetachEnabled() && checkSelection(selection));
+    }
+    
+    private Node getNewNode(Node toCheck, Node cur, WayExt way, HashSet<Node> replacements, DataSet ds, List<Command> cmds) {
+      Node extNewNode = null;
+      
+      if(toCheck != null && !toCheck.referrers(Way.class).anyMatch(ww -> (!ww.isClosed() && !ww.referrers(Relation.class).anyMatch(Relation::isMultipolygon)) && ww.containsNode(cur))) {
+        Way[] extWays = toCheck.referrers(Way.class).filter(ww -> ww != way.way && (ww.isClosed() || ww.referrers(Relation.class).anyMatch(Relation::isMultipolygon)) && ww.containsNode(cur)).toArray(Way[]::new);
+        
+        if(extWays.length == 1) {          
+          double angle = Utils.toDegrees(toCheck.getEastNorth().heading(cur.getEastNorth()));
+          
+          EastNorth m = WayExt.calculateMove(angle, 6);
+          extNewNode = new Node(cur.getEastNorth().add(m));
+          
+          boolean found = false;
+          
+          for(Node n : replacements) {
+            if(n.getEastNorth().equals(extNewNode.getEastNorth())) {
+              found = true;
+              extNewNode = n;
+              break;
+            }
+          }
+          
+          if(!found) {
+            replacements.add(extNewNode);
+            cmds.add(new AddCommand(ds, extNewNode));
+          }
+        }
+      }
+      
+      return extNewNode;
+    }
+    
+    private boolean checkForReplacement(Node prev, Node next, Node cur, LinkedList<Node> nodeList, LinkedList<NodePair> nodePairs) {
+      boolean result = false;
+      
+      if(prev != null) {
+        nodeList.add(prev);
+        nodePairs.add(new NodePair(cur, prev));
+        result = true;
+      }
+      
+      if(next != null) {
+        nodeList.add(next);
+        nodePairs.add(new NodePair(cur, next));
+        result = true;
+      }
+      
+      return result;
     }
     
     private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
@@ -1900,8 +1969,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         
         EastNorth add = calculateMove(angle, length);
-      
-        EastNorth test = way.getNode(i).getEastNorth().add(add.east(), add.north());
+        EastNorth test = way.getNode(i).getEastNorth().add(add.east() >= 1 ? 1 : add.east() <= -1 ? -1 : add.east(), add.north() >= 1 ? 1 : add.north() <= -1 ? -1 : add.north());
         
         if(!area.contains(test.east(), test.north())) {
           add = new EastNorth(-add.east(), -add.north());
@@ -1924,7 +1992,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       return index;
     }
 
-    private EastNorth calculateMove(double heading, double length) {
+    private static EastNorth calculateMove(double heading, double length) {
       if(heading == 360) {
         heading = 0;
       }
