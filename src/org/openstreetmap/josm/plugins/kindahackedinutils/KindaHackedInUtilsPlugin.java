@@ -966,7 +966,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 boolean isMultipolygon = way.way.referrers(Relation.class).anyMatch(Relation::isMultipolygon);
                 
-                if(way.isClosed() || isMultipolygon) {
+                if(way.isClosed() && !way.isHighway() || isMultipolygon) {
                   LinkedList<NodePair> nodePairs = newNodesTable.get(way.way);
                   
                   if(nodePairs == null) {
@@ -1962,6 +1962,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     public boolean isClosed() {
       return way.isClosed();
+    }
+    
+    public boolean isHighway() {
+      return way.hasKey("highway");
     }
   }
   

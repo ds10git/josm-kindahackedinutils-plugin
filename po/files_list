@@ -1,0 +1,4 @@
+../src/org/openstreetmap/josm/plugins/kindahackedinutils/Conf.java
+../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPlugin.java
+../src/org/openstreetmap/josm/plugins/kindahackedinutils/KindaHackedInUtilsPreferences.java
+../src/org/openstreetmap/josm/plugins/kindahackedinutils/QuickRelationSelectionListDialog.java
