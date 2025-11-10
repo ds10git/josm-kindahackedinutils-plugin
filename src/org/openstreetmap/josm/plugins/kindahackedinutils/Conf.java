@@ -12,6 +12,7 @@ public class Conf {
   static final String DIRECTION_FROM_NODE_FOR_WAYS = "kindahackedinutils.directionFromNodeForWays";
   static final String DIRECTION_SHOW_POPUP = "kindahackedinutils.showPopup";
   static final String DIRECTION_OPPOSITE_SIMPLE = "kindahackedinutils.oppositeSimpleDirection";
+  static final String DIRECTION_HELPER_LINE_ENABLED = "kindahackedinutils.directionHelperLineEnabled";
   
   static final String CREATE_NODE = "kindahackedinutils.createNode";
   static final String SPLIT_WAY = "kindahackedinutils.splitWay";
@@ -25,6 +26,14 @@ public class Conf {
   
   static void setDirectionEnabled(boolean value) {
     Config.getPref().putBoolean(DIRECTION_ENABLED, value);
+  }
+  
+  public static boolean isDirectionHelperLineEnabled() {
+    return Config.getPref().getBoolean(DIRECTION_HELPER_LINE_ENABLED, true);
+  }
+  
+  static void setDirectionHelperLineEnabled(boolean value) {
+    Config.getPref().putBoolean(DIRECTION_HELPER_LINE_ENABLED, value);
   }
   
   public static boolean isSimpleDirection() {

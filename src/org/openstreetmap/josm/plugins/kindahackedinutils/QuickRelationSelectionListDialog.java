@@ -24,6 +24,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.HistoryInfoAction;
+import org.openstreetmap.josm.actions.relation.DeleteRelationsAction;
 import org.openstreetmap.josm.actions.relation.EditRelationAction;
 import org.openstreetmap.josm.actions.relation.SelectRelationAction;
 import org.openstreetmap.josm.data.osm.DataSelectionListener;
@@ -33,6 +34,7 @@ import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.IRelation;
 import org.openstreetmap.josm.data.osm.IWay;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.event.AbstractDatasetChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataSetListener;
@@ -62,11 +64,24 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
   
   /** the edit action */
   private final EditRelationAction edit = new EditRelationAction();
+  /** the delete action */
+  private final DeleteRelationsAction delete = new DeleteRelationsAction() {
+    public void actionPerformed(ActionEvent e) {
+      if(relationList.getSelectedValue() != null) {
+        IRelation<?> r = relationList.getSelectedValue();
+       
+        if(r instanceof Relation) {
+          deleteRelation(Collections.singleton((Relation)r));
+        }
+      }
+    };
+  };
   /** the select relation action */
   private final SelectRelationAction select = new SelectRelationAction(false);
   
   private SideButton editBtn = new SideButton(edit, false);
   private SideButton selectBtn = new SideButton(select, false);
+  private SideButton deleteBtn = new SideButton(delete, false);
   private final AtomicInteger lastIndex = new AtomicInteger(-1);
   
   public QuickRelationSelectionListDialog() {
@@ -184,7 +199,8 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
     
     createLayout(relationList, true, Arrays.asList(        
         editBtn,
-        selectBtn
+        selectBtn,
+        deleteBtn
      ));
 
     // Copied from org.openstreetmap.josm.gui.dialogs.RelationListDialog
@@ -223,6 +239,7 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
   private void updateBtnEnabledState() {
     editBtn.setEnabled(relationList.getSelectedIndex() != -1);
     selectBtn.setEnabled(relationList.getSelectedIndex() != -1);
+    deleteBtn.setEnabled(relationList.getSelectedIndex() != -1);
   }
   
   @Override
@@ -330,9 +347,18 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
   }
 
   @Override
-  public void primitivesAdded(PrimitivesAddedEvent event) {}
+  public void primitivesAdded(PrimitivesAddedEvent event) {
+    if(event.getPrimitives().stream().anyMatch(p -> p instanceof Relation)) {
+      selectionChanged(null);
+    }
+  }
+  
   @Override
-  public void primitivesRemoved(PrimitivesRemovedEvent event) {}
+  public void primitivesRemoved(PrimitivesRemovedEvent event) {
+    if(event.getPrimitives().stream().anyMatch(p -> p instanceof Relation)) {
+      selectionChanged(null);
+    }
+  }
 
   @Override
   public void tagsChanged(TagsChangedEvent event) {}

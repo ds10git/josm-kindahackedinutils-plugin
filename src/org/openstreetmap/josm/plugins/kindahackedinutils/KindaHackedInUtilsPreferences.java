@@ -23,6 +23,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   private JCheckBox directionAutoSet;
   private JCheckBox directionShowPopup;
   private JCheckBox directionFromNodeForWays;
+  private JCheckBox directionHelperLineEnabled;
   
   private JCheckBox toFront;
   private JCheckBox splitWays;
@@ -39,6 +40,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     directionAutoSet = new JCheckBox(tr("Automatically set direction value to degrees on possible ambiguous traffic sign nodes"), Conf.isAutoSetEnabled());
     directionShowPopup = new JCheckBox(tr("Show popup with possible degree values for ambiguous traffic sign nodes"), Conf.isShowPopupEnabled());
     directionFromNodeForWays = new JCheckBox(tr("Get directions for ways and multipolygons from selected member node"), Conf.isDirectionFromNodeForWaysEnabled());
+    directionHelperLineEnabled = new JCheckBox(tr("Draw helper line while pressing keyboard key"), Conf.isDirectionHelperLineEnabled());
     
     splitWays = new JCheckBox(tr("Split ways at mouse location with keyboard key K"), Conf.isSplitWay());
     createNode = new JCheckBox(tr("Create new node at mouse location with keyboard key B"), Conf.isCreateNode());
@@ -47,8 +49,12 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     toFront = new JCheckBox(tr("Get JOSM to front whenever mouse enters map view or dialog window (might not work depending on OS and window manager)"), Conf.isToFront());
     
     directionObjectSpecific.setEnabled(directionEnabled.isSelected());
-    directionSimple.setEnabled(directionEnabled.isSelected() && !directionObjectSpecific.isSelected());
-    directionNatural.setEnabled(directionEnabled.isSelected());
+    directionSimple.setEnabled(directionObjectSpecific.isEnabled() && !directionObjectSpecific.isSelected());
+    directionShowPopup.setEnabled(directionObjectSpecific.isEnabled());
+    directionNatural.setEnabled(directionObjectSpecific.isEnabled());
+    directionAutoSet.setEnabled(directionObjectSpecific.isEnabled());
+    directionFromNodeForWays.setEnabled(directionObjectSpecific.isEnabled());
+    directionHelperLineEnabled.setEnabled(directionObjectSpecific.isEnabled());
     
     directionEnabled.addItemListener(e -> {
       directionObjectSpecific.setEnabled(e.getStateChange() == ItemEvent.SELECTED);
@@ -57,6 +63,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
       directionNatural.setEnabled(directionObjectSpecific.isEnabled());
       directionAutoSet.setEnabled(directionObjectSpecific.isEnabled());
       directionFromNodeForWays.setEnabled(directionObjectSpecific.isEnabled());
+      directionHelperLineEnabled.setEnabled(directionObjectSpecific.isEnabled());
     });
     
     directionObjectSpecific.addItemListener(e -> {
@@ -82,19 +89,21 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     GridBagConstraints gc = GBC.std(0, 6);
     gc.insets.left = 20;
     
+    p.add(directionHelperLineEnabled, gc);
+    gc.gridy++;
     p.add(directionObjectSpecific, gc);
-    gc.gridy = 7;
+    gc.gridy++;
     p.add(directionSimple, gc);
-    gc.gridy = 8;
+    gc.gridy++;
     p.add(directionNatural, gc);
-    gc.gridy = 9;
+    gc.gridy++;
     p.add(directionAutoSet, gc);
-    gc.gridy = 10;
+    gc.gridy++;
     p.add(directionShowPopup, gc);
-    gc.gridy = 11;
+    gc.gridy++;
     p.add(directionFromNodeForWays, gc);
     
-    p.add(GBC.glue(0, 10), GBC.std(0, 12).fill());
+    p.add(GBC.glue(0, 10), GBC.std(0, gc.gridy+1).fill());
     
     createPreferenceTabWithScrollPane(gui, p);
   }
@@ -112,6 +121,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     Conf.setAutoSetEnabled(directionAutoSet.isSelected());
     Conf.setShowPopupEnabled(directionShowPopup.isSelected());
     Conf.setDirectionFromNodeForWaysEnabled(directionFromNodeForWays.isSelected());
+    Conf.setDirectionHelperLineEnabled(directionHelperLineEnabled.isSelected());
     
     return false;
   }
