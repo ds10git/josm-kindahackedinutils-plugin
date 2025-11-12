@@ -13,6 +13,8 @@ public class Conf {
   static final String DIRECTION_SHOW_POPUP = "kindahackedinutils.showPopup";
   static final String DIRECTION_OPPOSITE_SIMPLE = "kindahackedinutils.oppositeSimpleDirection";
   static final String DIRECTION_HELPER_LINE_ENABLED = "kindahackedinutils.directionHelperLineEnabled";
+  static final String DIRECTION_HELPER_CONE_ENABLED = "kindahackedinutils.directionHelperConeEnabled";
+  static final String DIRECTION_ARROW_FOR_SIMPLE_DIRECTION = "kindahackedinutils.directionArrowForSimpleDirection";
   
   static final String CREATE_NODE = "kindahackedinutils.createNode";
   static final String SPLIT_WAY = "kindahackedinutils.splitWay";
@@ -34,6 +36,22 @@ public class Conf {
   
   static void setDirectionHelperLineEnabled(boolean value) {
     Config.getPref().putBoolean(DIRECTION_HELPER_LINE_ENABLED, value);
+  }
+  
+  public static boolean isDirectionHelperConeEnabled() {
+    return Config.getPref().getBoolean(DIRECTION_HELPER_CONE_ENABLED, true);
+  }
+  
+  static void setDirectionHelperConeEnabled(boolean value) {
+    Config.getPref().putBoolean(DIRECTION_HELPER_CONE_ENABLED, value);
+  }
+  
+  public static boolean isDirectionArrowForSimpleDirectionEnabled() {
+    return Config.getPref().getBoolean(DIRECTION_ARROW_FOR_SIMPLE_DIRECTION, true);
+  }
+  
+  static void setDirectionArrowForSimpleDirection(boolean value) {
+    Config.getPref().putBoolean(DIRECTION_ARROW_FOR_SIMPLE_DIRECTION, value);
   }
   
   public static boolean isSimpleDirection() {

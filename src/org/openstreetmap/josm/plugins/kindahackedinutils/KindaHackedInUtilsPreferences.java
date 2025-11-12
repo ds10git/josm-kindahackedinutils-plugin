@@ -24,6 +24,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   private JCheckBox directionShowPopup;
   private JCheckBox directionFromNodeForWays;
   private JCheckBox directionHelperLineEnabled;
+  private JCheckBox directionHelperConeEnabled;
   
   private JCheckBox toFront;
   private JCheckBox splitWays;
@@ -41,6 +42,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     directionShowPopup = new JCheckBox(tr("Show popup with possible degree values for ambiguous traffic sign nodes"), Conf.isShowPopupEnabled());
     directionFromNodeForWays = new JCheckBox(tr("Get directions for ways and multipolygons from selected member node"), Conf.isDirectionFromNodeForWaysEnabled());
     directionHelperLineEnabled = new JCheckBox(tr("Draw helper line while pressing keyboard key"), Conf.isDirectionHelperLineEnabled());
+    directionHelperConeEnabled = new JCheckBox(tr("Draw helper cone while pressing keyboard key"), Conf.isDirectionHelperConeEnabled());
     
     splitWays = new JCheckBox(tr("Split ways at mouse location with keyboard key K"), Conf.isSplitWay());
     createNode = new JCheckBox(tr("Create new node at mouse location with keyboard key B"), Conf.isCreateNode());
@@ -55,6 +57,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     directionAutoSet.setEnabled(directionObjectSpecific.isEnabled());
     directionFromNodeForWays.setEnabled(directionObjectSpecific.isEnabled());
     directionHelperLineEnabled.setEnabled(directionObjectSpecific.isEnabled());
+    directionHelperConeEnabled.setEnabled(directionObjectSpecific.isEnabled());
     
     directionEnabled.addItemListener(e -> {
       directionObjectSpecific.setEnabled(e.getStateChange() == ItemEvent.SELECTED);
@@ -64,6 +67,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
       directionAutoSet.setEnabled(directionObjectSpecific.isEnabled());
       directionFromNodeForWays.setEnabled(directionObjectSpecific.isEnabled());
       directionHelperLineEnabled.setEnabled(directionObjectSpecific.isEnabled());
+      directionHelperConeEnabled.setEnabled(directionObjectSpecific.isEnabled());
     });
     
     directionObjectSpecific.addItemListener(e -> {
@@ -90,6 +94,8 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     gc.insets.left = 20;
     
     p.add(directionHelperLineEnabled, gc);
+    gc.gridy++;
+    p.add(directionHelperConeEnabled, gc);
     gc.gridy++;
     p.add(directionObjectSpecific, gc);
     gc.gridy++;
@@ -122,6 +128,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     Conf.setShowPopupEnabled(directionShowPopup.isSelected());
     Conf.setDirectionFromNodeForWaysEnabled(directionFromNodeForWays.isSelected());
     Conf.setDirectionHelperLineEnabled(directionHelperLineEnabled.isSelected());
+    Conf.setDirectionHelperConeEnabled(directionHelperConeEnabled.isSelected());
     
     return false;
   }

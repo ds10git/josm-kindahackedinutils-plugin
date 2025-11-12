@@ -30,7 +30,7 @@ import java.awt.event.MouseMotionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.geom.Area;
-import java.awt.geom.GeneralPath;
+import java.awt.geom.Path2D;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -123,9 +123,11 @@ import org.openstreetmap.josm.data.osm.event.RelationMembersChangedEvent;
 import org.openstreetmap.josm.data.osm.event.TagsChangedEvent;
 import org.openstreetmap.josm.data.osm.event.WayNodesChangedEvent;
 import org.openstreetmap.josm.data.osm.visitor.OsmPrimitiveVisitor;
+import org.openstreetmap.josm.data.osm.visitor.paint.ArrowPaintHelper;
 import org.openstreetmap.josm.data.osm.visitor.paint.PaintColors;
 import org.openstreetmap.josm.data.preferences.AbstractProperty;
 import org.openstreetmap.josm.data.preferences.CachingProperty;
+import org.openstreetmap.josm.data.preferences.NamedColorProperty;
 import org.openstreetmap.josm.data.preferences.StrokeProperty;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.IconToggleButton;
@@ -133,9 +135,11 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.MapView;
+import org.openstreetmap.josm.gui.MapViewState.MapViewPoint;
 import org.openstreetmap.josm.gui.PrimitiveRenderer;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
 import org.openstreetmap.josm.gui.dialogs.CommandListMutableTreeNode;
+import org.openstreetmap.josm.gui.draw.MapPath2D;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
 import org.openstreetmap.josm.gui.layer.MapViewPaintable;
@@ -147,6 +151,7 @@ import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.KeyPressReleaseListener;
 import org.openstreetmap.josm.gui.util.WindowGeometry;
+import org.openstreetmap.josm.gui.widgets.ImageLabel;
 import org.openstreetmap.josm.plugins.Plugin;
 import org.openstreetmap.josm.plugins.PluginInformation;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -166,6 +171,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private static final String ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE = "CTRL+SHIFT+R_ALTERNATIVE";
   private static final AbstractProperty<Color> RUBBER_LINE_COLOR = PaintColors.SELECTED.getProperty().getChildColor(marktr("helper line"));
   private static final CachingProperty<BasicStroke> RUBBER_LINE_STROKE = new StrokeProperty("draw.stroke.helper-line", "3").cached();
+  private NamedColorProperty coneColor = new NamedColorProperty(tr("KindaHackedInUtils: Direction cone color"), new Color(0xFF,0,0,0x78));
   
   private static final LinkedList<String> TURN_RESTRICTION = 
       Stream.of(
@@ -652,11 +658,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             String nodePos = null;
             
             if(n == w.getNode(0)) {
-              d = (int)Utils.toDegrees(w.getNode(1).getEastNorth().heading(n.getEastNorth()));
+              d = calculateDirection(w.getNode(1).getEastNorth(), n.getEastNorth());
               nodePos = "firstNode";
             }
             else if(n == w.getNode(w.getNodesCount()-1)) {
-              d = (int)Utils.toDegrees(w.getNode(w.getNodesCount()-2).getEastNorth().heading(n.getEastNorth()));
+              d = calculateDirection(w.getNode(w.getNodesCount()-2).getEastNorth(), n.getEastNorth());
               nodePos = "lastNode";
             }
             else {
@@ -665,8 +671,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   Node prev = w.getNode(i-1);
                   Node next = w.getNode(i+1);
                   
-                  int d1 = (int)Utils.toDegrees(next.getEastNorth().heading(n.getEastNorth()));
-                  int d2 = (int)Utils.toDegrees(prev.getEastNorth().heading(n.getEastNorth()));
+                  int d1 = calculateDirection(next.getEastNorth(), n.getEastNorth());
+                  int d2 = calculateDirection(prev.getEastNorth(), n.getEastNorth());
                   
                   OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(w, d1, arrow, "moddleNode");
                   item.waySegment = new WaySegment(w, i);
@@ -830,7 +836,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   }
   
   private static final boolean isSpecialDirectionNode(Node n) {
-    return n.hasKey("traffic_sign") || Objects.equals("stop", n.get("highway")) || Objects.equals("give_way", n.get("highway"));
+    return n.hasKey("traffic_sign") ||n.hasTag("highway", "stop", "give_way");
   }
   
   public static final KindaHackedInUtilsPlugin getInstance() {
@@ -956,7 +962,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               if(w != way && !nodeHandled.get()) {
                 removeNodes1.add(n);
                 
-                if((!way.isClosed() || way.hasKey("building") || way.hasKey("highway"))) {
+                if((!way.isClosed() || way.hasKey("building", "highway"))) {
                   allNodes1.add(new Node(n.getEastNorth().add(wayExt.getAddValueForNode(n))));
                   moveNodes1.add(allNodes1.getLast());
                   cmds1.add(new AddCommand(ds, allNodes1.getLast()));
@@ -1108,7 +1114,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         Way[] extWays = toCheck.referrers(Way.class).filter(ww -> ww != way.way && (ww.isClosed() || ww.referrers(Relation.class).anyMatch(Relation::isMultipolygon)) && ww.containsNode(cur)).toArray(Way[]::new);
         
         if(extWays.length == 1) {          
-          double angle = Utils.toDegrees(toCheck.getEastNorth().heading(cur.getEastNorth()));
+          double angle = calculateDirection(toCheck.getEastNorth(), cur.getEastNorth());
           
           EastNorth m = WayExt.calculateMove(angle, 6);
           extNewNode = new Node(cur.getEastNorth().add(m));
@@ -1404,11 +1410,15 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   }
   
   class AngleAction extends JosmAction implements KeyPressReleaseListener, MapViewPaintable, MouseMotionListener {
+    private final ArrowPaintHelper ah = new ArrowPaintHelper(Utils.toRadians(35), 20);
+    
     private MouseAdapter mouseAdapter;
     private String pressedAction;
     private EastNorth start;
     private boolean isSimpleDirection;
     private Node trafficSigNode;
+    private int angle;
+    private String simpleDirection;
     
     public AngleAction() {
       super(tr("Get heading for direction from mouse location"), /* ICON() */ "statusline/heading.svg", tr("Get heading for direction from mouse location"),
@@ -1417,7 +1427,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       mouseAdapter = new MouseAdapter() {
         @Override
         public void mouseExited(MouseEvent e) {
-          MainApplication.getMap().mapView.repaint();
+          handleMouseMovement();
         }
       };
     }
@@ -1439,7 +1449,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         final Point p = MainApplication.getMap().mapView.getMousePosition(true);
         
         if(p != null) {
-          int test = (int)Math.round(Utils.toDegrees(start.heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y))));
+          int test = calculateDirection(start, MainApplication.getMap().mapView.getEastNorth(p.x, p.y));
           int a = test;
           
           if(nodes.size() == 1) {
@@ -1455,12 +1465,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               }
               
               if(!changeDirectionForTrafficSign(Collections.singletonList(n), true, pointedTo, objectSpecificDirection, true)) {
-                if(Conf.isNaturalDirection() && (isSpecialDirectionNode(n) || n.hasTag("highway", "traffic_signaös"))) {
-                  a += 180;
-                  
-                  if(a >= 360) {
-                    a -= 360;
-                  }
+                if(Conf.isNaturalDirection() && (isSpecialDirectionNode(n) || n.hasTag("highway", "traffic_signals") || n.hasTag("railway", "signal"))) {
+                  a = inverseDirection(a);
                 }
                 
                 AtomicReference<String> angle = new AtomicReference<String>(getDirectionFromHeading(a));
@@ -1513,43 +1519,12 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 if(waysToHandleList.isEmpty() && ((ways.length == 1) || (ways.length == 2 && !n.hasKey("traffic_sign") && 
                     n.hasTag("highway", "traffic_signals", "give_way", "stop")))) {
-                  Way way = ways[wayIndex];
+                  simpleDirection = getSimpleDirectionForPointed(MainApplication.getMap().mapView, ways[wayIndex], n, MainApplication.getMap().mapView.getEastNorth(p.x, p.y));
+                  int pAngle = getDirectionForPointed(MainApplication.getMap().mapView, n, p);
                   
-                  Node prev = null;
-                  Node next = null;
-                  Node last = null;
-                  
-                  for(int i = 0; i < way.getNodesCount(); i++) {
-                    if(way.getNode(i).equals(n)) {
-                      prev = last;
-                      
-                      if(i+1 < way.getNodesCount()) {
-                        next = way.getNode(i+1);
-                      }
-                      
-                      break;
-                    }
-                    
-                    last = way.getNode(i);
-                  }
-                  
-                  if(pointedTo != null && pointedTo.containsNode(n) && next != null && prev != null) {
-                    WaySegment segmentPointed = MainApplication.getMap().mapView.getNearestWaySegment(p, o -> o.hasKey("highway"));
-                    
-                    if(segmentPointed != null && way.isHighlighted() && segmentPointed.getWay() == way && segmentPointed.getSecondNode() == n) {
-                      next = null;
-                    }
-                  }
-                  
-                  if(next == null) {
-                    next = n;
-                  }
-                  else {
-                    prev = n;
-                  }
-                  
-                  if(prev != null) {
-                    simpleDirection = getSimpleDirection(Utils.toDegrees(prev.getEastNorth().heading(next.getEastNorth())), test);
+                  if(pAngle != -1) {
+                    a = pAngle;
+                    angle.set(getDirectionFromHeading(pAngle));
                   }
                 }
                 else if(!waysToHandleList.isEmpty()) {
@@ -1677,7 +1652,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 }
                 
                 if(!nodeList.isEmpty() && p != null) {
-                  UndoRedoHandler.getInstance().add(new ChangePropertyCommand(op, DirectionTagMap.getDirectionKeyForPrimitive(op), getDirectionFromHeading((int)Math.round(Utils.toDegrees(Geometry.getCentroid(nodeList).heading(MainApplication.getMap().mapView.getEastNorth(p.x, p.y)))))));
+                  UndoRedoHandler.getInstance().add(new ChangePropertyCommand(op, DirectionTagMap.getDirectionKeyForPrimitive(op), getDirectionFromHeading(calculateDirection(Geometry.getCentroid(nodeList), MainApplication.getMap().mapView.getEastNorth(p.x, p.y)))));
                   
                   if(op instanceof Relation) {
                     OsmDataManager.getInstance().getActiveDataSet().setSelected(op);
@@ -1783,7 +1758,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     @Override
     public void doKeyPressed(KeyEvent e) {
-      if(Conf.isDirectionHelperLineEnabled() && (getShortcut().isEvent(e) || angleDegreeShortcut.isEvent(e))) {
+      angle = -1;
+      if((Conf.isDirectionHelperLineEnabled() || Conf.isDirectionHelperConeEnabled()) && (getShortcut().isEvent(e) || angleDegreeShortcut.isEvent(e))) {
         MainApplication.getMap().mapView.addTemporaryLayer(AngleAction.this);
         MainApplication.getMap().mapView.addMouseMotionListener(AngleAction.this);
         MainApplication.getMap().mapView.addMouseListener(mouseAdapter);
@@ -1800,11 +1776,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         Node n = nodes.stream().findFirst().get();
         start = n.getEastNorth();
         
-        if(Conf.isNaturalDirection() && nodes.stream().anyMatch(n1 -> isSpecialDirectionNode(n1) || n1.hasTag("highway", "traffic_signaös"))) {
+        if(nodes.stream().anyMatch(n1 -> isSpecialDirectionNode(n1) || n1.hasTag("highway", "traffic_signals") || n1.hasTag("railway", "signal"))) {
           trafficSigNode = n;
         }
         
-        isSimpleDirection = pressedAction != null && pressedAction.isBlank() && (n.hasTag("railway","signal") || (trafficSigNode != null && Conf.isSimpleDirection())) && n.referrers(Way.class).filter(w -> w.hasKey("highway")).count() == 1;
+        isSimpleDirection = pressedAction != null && pressedAction.isBlank() && (trafficSigNode != null && (Conf.isSimpleDirection() || Conf.isObjectSpecificDirection())) && n.referrers(Way.class).filter(w -> isHighOrRailway(w)).count() == 1;
       }
       else if(ways.size() == 1) {
         Way w = ways.stream().findFirst().get();
@@ -1821,6 +1797,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       else if(relations.size() == 1 && relations.stream().anyMatch(r -> r.isMultipolygon() && DirectionTagMap.getDirectionKeyForPrimitive(r) != null)) {
         setStartForRelation(relations.stream().findFirst().get(), mv);
       }
+      
+      handleMouseMovement();
     }
 
     private void setStartForRelation(Relation r, MapView mv) {
@@ -1861,47 +1839,316 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
 
     @Override
-    public synchronized void paint(Graphics2D g, MapView mv, Bounds bbox) {
-      int angle = -1;
+    public void paint(Graphics2D g, MapView mv, Bounds bbox) {
+      g.setColor(RUBBER_LINE_COLOR.get());
+      g.setStroke(RUBBER_LINE_STROKE.get());
+      g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+      Point p1 = mv.getMousePosition(true);
       
-      if(start != null && !isSimpleDirection) {
-        g.setColor(RUBBER_LINE_COLOR.get());
-        g.setStroke(RUBBER_LINE_STROKE.get());
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        
-        GeneralPath b = new GeneralPath();
+      if(start != null && !isSimpleDirection && angle == -1) {
         Point p0 = mv.getPoint(start);
-        Point p1 = mv.getMousePosition(true);
         
-        if(p1 != null && (!pressedAction.isBlank() || trafficSigNode == null || !trafficSigNode.referrers(Way.class).anyMatch(w -> w.hasTag("highway") && w.isHighlighted()))) {
-          angle = (int)Math.round(Utils.toDegrees(start.heading(mv.getEastNorth(p1.x, p1.y))));
+        if(p1 != null && (!pressedAction.isBlank() || trafficSigNode == null || angle == -1 || (!Conf.isSimpleDirection() && trafficSigNode.referrers(Way.class).count() == 1) || !trafficSigNode.referrers(Way.class).anyMatch(w -> (w.hasTag("highway") || w.hasTag("railway")) && w.isHighlighted()))) {
+          angle = calculateDirection(start, mv.getEastNorth(p1.x, p1.y));
           
-          if(trafficSigNode != null) {
-            angle += 180;
+          if(trafficSigNode != null && Conf.isNaturalDirection()) {
+            angle = inverseDirection(angle);
+          }
+          
+          if(Conf.isDirectionHelperLineEnabled()) {
+            g.drawLine(p0.x, p0.y, p1.x, p1.y);
+          }
+        }
+      }
+      else if(start != null && trafficSigNode != null && simpleDirection != null && Conf.isDirectionHelperLineEnabled()) {
+        Way w = trafficSigNode.referrers(Way.class).findFirst().get();
+        
+        if(!w.isHighlighted()) {
+          int index1 = -1;
+          int index2 = -1;
+          
+          for(int i = 0; i < w.getRealNodesCount(); i++) {
+            if(w.getNode(i) == trafficSigNode) {
+              if(i != w.getRealNodesCount()-1) {
+                index1 = i;
+                index2 = i+1;
+              }
+              else {
+                index1 = i-1;
+                index2 = i;
+              }
+              
+              break;
+            }
+          }
+          
+          if(index1 != -1) {
+            int angle = calculateDirection(w.getNode(index1).getEastNorth(), w.getNode(index2).getEastNorth())+90;
             
             if(angle >= 360) {
               angle -= 360;
             }
+            
+            EastNorth add = WayExt.calculateMove(angle, (int)400*mv.getScale());
+            
+            Point p0 = mv.getPoint(start.add(add));
+            Point p2 = mv.getPoint(start.add(-add.east(), -add.north()));
+            
+            g.drawLine(p0.x, p0.y, p2.x, p2.y);
+          }
+        }
+      }
+        
+      if(p1 != null && simpleDirection != null && Conf.isDirectionArrowForSimpleDirectionEnabled()) {
+        Point p2 = simpleDirection.equals("forward") ? new Point(p1.x, p1.y - 100) : new Point(p1.x, p1.y + 100);
+        
+        g.drawLine(p1.x, p1.y, p2.x, p2.y);
+        
+        MapViewPoint mvp = mv.getState().getPointFor(mv.getEastNorth(p2.x, p2.y));
+        MapViewPoint from = mv.getState().getPointFor(mv.getEastNorth(p1.x, p1.y));
+        
+        MapPath2D path = new MapPath2D();
+        ah.paintArrowAt(path, mvp, from);
+        g.draw(path);
+      }
+      
+      if(Conf.isDirectionHelperConeEnabled() && angle != -1 && p1 != null && start != null) {
+        Point p0 = mv.getPoint(start);
+        Path2D p = new Path2D.Double();
+        p.moveTo(p0.x, p0.y);
+        EastNorth l = mv.getEastNorth(p0.x, p0.y);
+        
+        int viewAngle = 35;
+        
+        int angle = inverseDirection(this.angle) + viewAngle;
+        
+        if(angle >= 360) {
+          angle -= 360;
+        }
+        
+        EastNorth add = WayExt.calculateMove(angle, viewAngle*mv.getScale());
+        
+        angle = inverseDirection(this.angle) - viewAngle;
+        
+        if(angle < 0) {
+          angle += 360;
+        }
+        
+        EastNorth add3 = WayExt.calculateMove(angle, viewAngle*mv.getScale());
+        
+        
+        EastNorth add2 = WayExt.calculateMove(inverseDirection(this.angle), (viewAngle+10)*mv.getScale());
+        
+        Point c1 = mv.getPoint(l.add(add));
+        Point c2 = mv.getPoint(l.add(add3));
+        Point cm = mv.getPoint(l.add(add2));
+        
+        p.lineTo(c1.x, c1.y);
+        p.curveTo(c1.x, c1.y, cm.x, cm.y, c2.x, c2.y);
+        p.lineTo(p0.x, p0.y);
+        
+        g.setColor(coneColor.get());
+        g.fill(p);
+      }
+      
+      setHeadingStatus();
+    }
+    
+    private void setHeadingStatus() {
+      if(simpleDirection == null) {
+        String direction = getDirectionFromHeading(angle);
+        
+        if(direction.matches("\\d+")) {
+          MainApplication.getMap().statusLine.setHeading(angle);
+        }
+        else {
+          ((ImageLabel)MainApplication.getMap().statusLine.getComponent(2)).setText(direction);
+        }
+      }
+      else if(simpleDirection != null && MainApplication.getMap().statusLine.getComponentCount() >= 3 && MainApplication.getMap().statusLine.getComponent(2) instanceof ImageLabel) {
+        ((ImageLabel)MainApplication.getMap().statusLine.getComponent(2)).setText("<html><div style=\"font-size:85%;\">"+simpleDirection+"</div></html>");
+      }
+    }
+
+    @Override
+    public void mouseDragged(MouseEvent e) {
+      handleMouseMovement();
+    }
+
+    @Override
+    public void mouseMoved(MouseEvent e) {
+      handleMouseMovement();
+    }
+    
+    private synchronized void handleMouseMovement() {
+      angle = -1;
+      simpleDirection = null;
+      
+      MapView mv = MainApplication.getMap().mapView;
+      Point p = mv.getMousePosition(true);
+      
+      if(p != null) {
+        if(!isSimpleDirection && trafficSigNode != null && trafficSigNode.referrers(Way.class).anyMatch(w -> (w.hasTag("highway") || w.hasTag("railway")) && w.isHighlighted())) {
+          angle = getDirectionForPointed(mv, trafficSigNode, p);
+          
+          if(angle != -1) {
+            setHeadingStatus();
+          }
+        }
+        else if(isSimpleDirection && trafficSigNode != null) {
+          simpleDirection = getSimpleDirectionForPointed(mv, trafficSigNode.referrers(Way.class).findFirst().get(), trafficSigNode, mv.getEastNorth(p.x, p.y));
+          Way w = trafficSigNode.referrers(Way.class).findFirst().get();
+          
+          int index = -1;
+          
+          for(int i = 0; i < w.getRealNodesCount(); i++) {
+            if(w.getNode(i) == trafficSigNode) {
+              index = i;
+              break;
+            }
           }
           
-          g.drawLine(p0.x, p0.y, p1.x, p1.y);
-          b.moveTo(p0.x, p0.y);
-          b.lineTo(p1.x, p1.y);
+          int index1 = -1;
+          int index2 = -1;
+          
+          if(Objects.equals("forward", simpleDirection)) {
+            if(index != w.getRealNodesCount()-1) {
+              index1 = index;
+              index2 = index+1;
+            }
+            else {
+              index1 = index-1;
+              index2 = index;
+            }
+          }
+          else if(simpleDirection != null) {
+            if(index != 0)  {
+              index1 = index;
+              index2 = index-1;
+            }
+            else {
+              index1 = index+1;
+              index2 = index;
+            }
+          }
+          
+          angle = calculateDirection(w.getNode(index2).getEastNorth(), w.getNode(index1).getEastNorth());
         }
       }
       
-      MainApplication.getMap().statusLine.setHeading(angle);
-    }
-
-    @Override
-    public void mouseDragged(MouseEvent arg0) {
       MainApplication.getMap().mapView.repaint();
     }
-
-    @Override
-    public void mouseMoved(MouseEvent arg0) {
-      MainApplication.getMap().mapView.repaint();
+    
+    private boolean isHighOrRailway(OsmPrimitive p) {
+      return p instanceof Way && p.hasKey("highway", "railway");
     }
+    
+    private int getDirectionForPointed(MapView mv, Node n, Point mouseLocation) {
+      int angle = -1;
+      
+      List<Way> ways = n.referrers(Way.class).filter(w -> w.containsNode(n) && isHighOrRailway(w) && w.isHighlighted()).toList();
+      
+      if(ways.size() == 1 && ways.get(0).getRealNodesCount() > 1) {
+        Way w = ways.get(0);
+        WaySegment s = mv.getNearestWaySegment(mouseLocation, o -> isHighOrRailway(w) && (o instanceof Way && ((Way)o).containsNode(n)));
+        
+        if(s != null && s.getWay() == w) {
+          int nIndex = -1;
+          int sIndex = -1;
+          
+          for(int i = 0; i < w.getRealNodesCount(); i++) {
+            if(w.getNode(i) == n) {
+              nIndex = i;
+            }
+            if(w.getNode(i) == s.getSecondNode()) {
+              sIndex = i;
+            }
+            
+            if(nIndex != -1 && sIndex != -1) {
+              break;
+            }
+          }
+          
+          if(sIndex <= nIndex) {
+            angle = calculateDirection(w.getNode(nIndex-1).getEastNorth(), w.getNode(nIndex).getEastNorth());
+          }
+          else {
+            angle = calculateDirection(w.getNode(nIndex+1).getEastNorth(), w.getNode(nIndex).getEastNorth());
+          }
+
+          if(!Conf.isNaturalDirection()) {
+            angle = inverseDirection(angle);
+          }
+        }
+      }
+      
+      return angle;
+    }
+    
+    private String getSimpleDirectionForPointed(MapView mv, Way w, Node n, EastNorth mouseLocation) {
+      String simpleDirection = null;
+      WaySegment s = mv.getNearestWaySegment(mv.getPoint(mouseLocation), o -> isHighOrRailway(o));
+      
+      if(w.isHighlighted() && w.containsNode(n) && s != null && s.getWay() == w) {
+        if(s != null && s.getWay() == w) {
+          int nIndex = -1;
+          int sIndex = -1;
+          
+          for(int i = 0; i < w.getRealNodesCount(); i++) {
+            if(w.getNode(i) == n) {
+              nIndex = i;
+            }
+            
+            if(w.getNode(i) == s.getSecondNode()) {
+              sIndex = i;
+            }
+            
+            if(nIndex != -1 && sIndex != -1) {
+              break;
+            }
+          }
+          
+          if(nIndex != -1 && nIndex != -1) {
+            if(sIndex <= nIndex) {
+              simpleDirection = !Conf.isNaturalDirection() && Conf.isOppositeSimpleDirectionEnabled() ? "forward" : "backward";
+            }
+            else {
+              simpleDirection = !Conf.isNaturalDirection() && Conf.isOppositeSimpleDirectionEnabled() ? "backward" : "forward";
+            }
+          }
+        }
+      }
+      else if(w.getRealNodesCount() > 1) {
+        for(int i = 0; i < w.getRealNodesCount(); i++) {
+          if(w.getNode(i) == n) {
+            if(i != w.getRealNodesCount()-1) {  
+              simpleDirection = getSimpleDirection(calculateDirection(n.getEastNorth(), w.getNode(i+1).getEastNorth()), calculateDirection(n.getEastNorth(), mouseLocation));
+            }
+            else {
+              simpleDirection = getSimpleDirection(calculateDirection(w.getNode(w.getRealNodesCount()-1).getEastNorth(), n.getEastNorth()), calculateDirection(n.getEastNorth(), mouseLocation));
+            }
+            
+            break;
+          }
+        }
+      }
+      
+      return simpleDirection;
+    }
+    
+    private int inverseDirection(int angle) {
+      angle += 180;
+      
+      if(angle >= 360) {
+        angle -= 360;
+      }
+      
+      return angle;
+    }
+  }
+    
+  private static int calculateDirection(EastNorth en1, EastNorth en2) {
+    return (int)Math.round(Math.round(Utils.toDegrees(en1.heading(en2))));
   }
   
   private String getSimpleDirection(double wayHeading, double mouseHeading) {
