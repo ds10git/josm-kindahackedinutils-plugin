@@ -1573,7 +1573,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 else if(n.hasTag("highway", "street_lamp")) {
                   key = "light:direction";
                 }
-                else if(n.hasTag("manmade", "surveillance")) {
+                else if(n.hasTag("man_made", "surveillance")) {
                   key = "camera:direction";
                 }
                 else if(n.hasKey("traffic_sign") && Config.getPref().getBoolean("kindahackedinutils.angleInfoNotShown", true)) {
