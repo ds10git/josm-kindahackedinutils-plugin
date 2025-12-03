@@ -37,6 +37,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -76,6 +77,8 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
@@ -84,8 +87,8 @@ import javax.swing.tree.TreeSelectionModel;
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.AutoScaleAction.AutoScaleMode;
 import org.openstreetmap.josm.actions.JosmAction;
-import org.openstreetmap.josm.actions.PurgeAction;
 import org.openstreetmap.josm.actions.mapmode.SplitMode;
+import org.openstreetmap.josm.actions.relation.EditRelationAction;
 import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.ChangeCommand;
 import org.openstreetmap.josm.command.ChangeMembersCommand;
@@ -95,6 +98,7 @@ import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.DeleteCommand;
 import org.openstreetmap.josm.command.PseudoCommand;
 import org.openstreetmap.josm.command.RemoveNodesCommand;
+import org.openstreetmap.josm.command.SelectCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -129,6 +133,7 @@ import org.openstreetmap.josm.data.preferences.AbstractProperty;
 import org.openstreetmap.josm.data.preferences.CachingProperty;
 import org.openstreetmap.josm.data.preferences.NamedColorProperty;
 import org.openstreetmap.josm.data.preferences.StrokeProperty;
+import org.openstreetmap.josm.data.tagging.ac.AutoCompletionItem;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.IconToggleButton;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -140,11 +145,17 @@ import org.openstreetmap.josm.gui.PrimitiveRenderer;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
 import org.openstreetmap.josm.gui.dialogs.CommandListMutableTreeNode;
 import org.openstreetmap.josm.gui.draw.MapPath2D;
+import org.openstreetmap.josm.gui.layer.LayerManager;
+import org.openstreetmap.josm.gui.layer.LayerManager.LayerAddEvent;
+import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
+import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
 import org.openstreetmap.josm.gui.layer.MapViewPaintable;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompletionManager;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
@@ -155,6 +166,8 @@ import org.openstreetmap.josm.gui.widgets.ImageLabel;
 import org.openstreetmap.josm.plugins.Plugin;
 import org.openstreetmap.josm.plugins.PluginInformation;
 import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.spi.preferences.PreferenceChangeEvent;
+import org.openstreetmap.josm.spi.preferences.PreferenceChangedListener;
 import org.openstreetmap.josm.tools.Geometry;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
@@ -189,6 +202,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   
   private static KindaHackedInUtilsPlugin instance;
   
+  private final KeyPressReleaseListener globalKeyListener;
+  
   private QuickRelationSelectionListDialog dialog;
   
   private final ImageIcon arrow;
@@ -201,8 +216,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private final Shortcut addToRelationShortcut;
   private Shortcut splitWayShortcut;
   private SplitMode splitMode;
-  private PurgeAction purgeAction;
-  private CommandQueueListener commandListener;
+  private final CommandQueueListener commandListener;
+  private JosmAction balloonAction;
+  private JosmAction splitObjectAction;
+  private final CloseWayAction closeWays;
+  private PreferenceChangedListener prefFixSplitListener;
   
   private ChangeListener cl = new ChangeListener() {
     private OsmPrimitveMenuItem lastItem;
@@ -238,7 +256,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     DetachAction detachAction = new DetachAction();
     TurnRestrictionAction turnRestrictionAction = new TurnRestrictionAction();
+    CreateAreaAction closedLineAction = new CreateAreaAction();
     UndoRedoSelectedAction undo = new UndoRedoSelectedAction();
+    FixSplitMultipolygonAction fix = new FixSplitMultipolygonAction();
+    WrapAroundAction wrapAroundWay = new WrapAroundAction();
+    closeWays = new CloseWayAction();
     
     arrow = ImageProvider.get("N", ImageSizes.POPUPMENU);
     listener = new DataSetListener() {
@@ -367,6 +389,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           lastChanged = event.getChangedWay();
           lastChangedEvent = System.currentTimeMillis();
         }
+        
+        closeWays.updateEnabledState();
       }
     };
     
@@ -381,12 +405,105 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     MainMenu.add(toolsMenu, turnRestrictionAction);
     MainMenu.add(toolsMenu, undo);
     MainMenu.add(toolsMenu, addToRelation);
+    MainMenu.add(toolsMenu, closedLineAction);
+    
+    if(Conf.isFixSplitMultipolygonEnabled()) {
+      MainMenu.add(toolsMenu, fix);
+    }
+    else {
+      prefFixSplitListener = new PreferenceChangedListener() {
+        @Override
+        public void preferenceChanged(PreferenceChangeEvent e) {
+          if(Conf.isFixSplitMultipolygonEnabled()) {
+            prefFixSplitListener = null;
+            MainMenu.add(toolsMenu, fix);
+            fix.updateEnabledState();
+            Config.getPref().removeKeyPreferenceChangeListener(Conf.FIX_SPLIT_MULTIPOLYGON_ENABLED, this);
+          }
+        }
+      };
+      
+      Config.getPref().addKeyPreferenceChangeListener(Conf.FIX_SPLIT_MULTIPOLYGON_ENABLED, prefFixSplitListener);
+    }
+    MainMenu.add(toolsMenu, wrapAroundWay);
+    MainMenu.add(toolsMenu, closeWays);
     
     commandListener = (e,x) -> {
       undo.updateEnabledState();
     };
-        
+    
     UndoRedoHandler.getInstance().addCommandQueueListener(commandListener);
+    
+    globalKeyListener = new KeyPressReleaseListener() {
+      @Override
+      public void doKeyReleased(KeyEvent e) {}
+      
+      @Override
+      public void doKeyPressed(KeyEvent e) {
+        if(angleDegreeShortcut.isEvent(e)) {
+          angleAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME_DIRECTION_ALTERNATIVE));
+        }
+        else if(drawNodeShortcut.isEvent(e)) {
+          if(Conf.isCreateNode()) {
+            MainApplication.getMenu().unselectAll.actionPerformed(null);
+
+            Point b = MainApplication.getMap().mapView.getMousePosition(true);
+            
+            if(b != null) {
+              MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
+              MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 2, false, MouseEvent.BUTTON1));
+            }
+          }
+        }
+        else if(addToRelationShortcut.isEvent(e)) {
+          addToRelation.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE));
+        }
+        else if(splitWayShortcut != null && splitWayShortcut.isEvent(e)) {
+          if(Conf.isSplitWay() && splitMode != null) {
+            MainApplication.getMenu().unselectAll.actionPerformed(null);
+
+            Point b = MainApplication.getMap().mapView.getMousePosition(true);
+            
+            if(b != null) {
+              splitMode.putValue("active", Boolean.TRUE);
+              splitMode.mousePressed(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
+              splitMode.putValue("active", Boolean.FALSE);
+            }
+          }
+        }
+      }
+    };
+   
+    MainApplication.getLayerManager().addLayerChangeListener(new LayerManager.LayerChangeListener() {
+      @Override
+      public void layerRemoving(LayerRemoveEvent e) {
+        if(e.isLastLayer()) {
+          if(prefFixSplitListener != null) {
+            Config.getPref().removeKeyPreferenceChangeListener(Conf.FIX_SPLIT_MULTIPOLYGON_ENABLED, prefFixSplitListener);
+            prefFixSplitListener = null;
+          }
+          
+          MapFrame map = MainApplication.getMap();
+          
+          if(map != null) {
+            map.keyDetector.removeKeyListener(angleAction);
+            map.keyDetector.removeKeyListener(globalKeyListener);
+          }
+        }
+      }
+      
+      @Override
+      public void layerOrderChanged(LayerOrderChangeEvent e) {}
+      
+      @Override
+      public void layerAdded(LayerAddEvent e) {
+        if(MainApplication.getLayerManager().getLayers().size() == 1) {
+          MapFrame map = MainApplication.getMap();
+          map.keyDetector.addKeyListener(angleAction);
+          map.keyDetector.addKeyListener(globalKeyListener);
+        }
+      }
+    });
   }
   
   @Override
@@ -456,28 +573,20 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       for(IconToggleButton b : MainApplication.getMap().allMapModeButtons) {
         if(b.getAction() instanceof SplitMode) {
           splitMode = (SplitMode)b.getAction();
+          splitWayShortcut = Shortcut.registerShortcut("kindahackedinutils.splitWay", tr("Split way at mouse location"), KeyEvent.VK_K, Shortcut.DIRECT);
           break;
         }
       }
-      
-      if(splitMode != null) {
-        splitWayShortcut = Shortcut.registerShortcut("kindahackedinutils.splitWay", tr("Split way at mouse location"), KeyEvent.VK_K, Shortcut.DIRECT);
-      }
     }
-    
-    if(purgeAction == null) {
-      JMenu edit = MainApplication.getMenu().editMenu;
-      
-      for(int i = 0; i < edit.getItemCount(); i++) {
-        JMenuItem item = edit.getItem(i);
         
-        if(item != null && item.getAction() instanceof PurgeAction) {
-          purgeAction = (PurgeAction)item.getAction();
-          break;
-        }
-      }
+    if(balloonAction == null && !findBalloonAction(MainApplication.getMenu().moreToolsMenu)) {
+      findBalloonAction(MainApplication.getMenu().toolsMenu);
     }
     
+    if(splitObjectAction == null) { 
+      findSplitObject(MainApplication.getMenu().moreToolsMenu);
+    }
+        
     if (oldFrame == null && newFrame != null) {
       dialog = new QuickRelationSelectionListDialog();
       newFrame.addToggleDialog(dialog);
@@ -487,17 +596,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     if(oldFrame != null) {
       oldFrame.getActionMap().remove("kindahackedinutils.addHeading");
-      
-      MapFrame map = MainApplication.getMap();
-      
-      if(map != null) {
-        map.keyDetector.removeKeyListener(angleAction);
-      }
     }   
     if(newFrame != null) {
-      MapFrame map = MainApplication.getMap();
-      map.keyDetector.addKeyListener(angleAction);
-      
       newFrame.getActionMap().put("kindahackedinutils.addHeading", angleAction);
       
       MainApplication.getLayerManager().addActiveLayerChangeListener(new ActiveLayerChangeListener() {
@@ -552,53 +652,71 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           }
         }
       }, AWTEvent.MOUSE_EVENT_MASK);
-     
-      MainApplication.getMap().keyDetector.addKeyListener(new KeyPressReleaseListener() {
-        @Override
-        public void doKeyReleased(KeyEvent e) {}
-        
-        @Override
-        public void doKeyPressed(KeyEvent e) {
-          if(angleDegreeShortcut.isEvent(e)) {
-            angleAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME_DIRECTION_ALTERNATIVE));
-          }
-          else if(drawNodeShortcut.isEvent(e)) {
-            if(Conf.isCreateNode()) {
-              MainApplication.getMenu().unselectAll.actionPerformed(null);
-  
-              Point b = MainApplication.getMap().mapView.getMousePosition(true);
-              
-              if(b != null) {
-                MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
-                MainApplication.getMap().mapModeDraw.mouseReleased(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 2, false, MouseEvent.BUTTON1));
-              }
-            }
-          }
-          else if(addToRelationShortcut.isEvent(e)) {
-            addToRelation.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE));
-          }
-          else if(splitWayShortcut != null && splitWayShortcut.isEvent(e)) {
-            if(Conf.isSplitWay() && splitMode != null) {
-              MainApplication.getMenu().unselectAll.actionPerformed(null);
-  
-              Point b = MainApplication.getMap().mapView.getMousePosition(true);
-              
-              if(b != null) {
-                splitMode.putValue("active", Boolean.TRUE);
-                splitMode.mousePressed(new MouseEvent(MainApplication.getMap(), 0, System.currentTimeMillis(), 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
-                splitMode.putValue("active", Boolean.FALSE);
-              }
-            }
-          }
-        }
-      });
   	}
   }
   
+  private boolean findBalloonAction(JMenu menu) {
+    for(int i = 0; i < menu.getItemCount(); i++) {
+      JMenuItem item = menu.getItem(i);
+      
+      if(item != null && item.getAction() != null && item.getAction().getClass().getCanonicalName().equals("net.pfiers.shrinkwrap.BalloonAction")) {
+        balloonAction = (JosmAction)item.getAction();
+        break;
+      }
+    }
+    
+    return balloonAction != null;
+  }
+  
+  private boolean findSplitObject(JMenu menu) {
+    for(int i = 0; i < menu.getItemCount(); i++) {
+      JMenuItem item = menu.getItem(i);
+      
+      if(item != null && item.getAction() != null && item.getAction().getClass().getCanonicalName().equals("org.openstreetmap.josm.plugins.utilsplugin2.actions.SplitObjectAction")) {
+        splitObjectAction = (JosmAction)item.getAction();
+        break;
+      }
+    }
+    
+    return splitObjectAction != null;
+  }
+  
+  private JPopupMenu popupMenu;
+  
+  private void setPopupMenu(final JPopupMenu menu) {
+    menu.addPopupMenuListener(new PopupMenuListener() {
+      
+      @Override
+      public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+        popupMenu = menu;
+      }
+      
+      @Override
+      public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+        popupMenu = null;
+      }
+      
+      @Override
+      public void popupMenuCanceled(PopupMenuEvent e) {
+        popupMenu = null;
+      }
+    });
+  }
+  
+  private void closePopupMenuIfVisible() {
+    final JPopupMenu menu = popupMenu;
+    
+    SwingUtilities.invokeLater(() -> {
+      if(menu != null) {
+        menu.setVisible(false);
+      }
+    });
+  }
+  
   private synchronized boolean changeDirectionForTrafficSign(Collection<? extends OsmPrimitive> list, boolean ignoreExistingValue, Way wayPointedAt, final boolean objectSpecificDirection, boolean autoSet) {
-    if(list.size() == 1 && list.stream().findFirst().get() instanceof Node) {
+    if(list.size() == 1 && list.stream().findFirst().get() instanceof Node && ((Node)list.stream().findFirst().get()).getDataSet() != null) {
       final Node n = (Node)list.stream().findFirst().get();
-      Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
+      Way[] ways = n.referrers(Way.class).filter(p -> isHighOrRailway(p)).toArray(Way[]::new);
       
       if(isSpecialDirectionNode(n) && ((ignoreExistingValue && wayPointedAt != null) || !n.hasKey("direction") || Objects.equals(n.get("direction"),"forward") || Objects.equals(n.get("direction"),"backward"))) {
         LinkedList<Way> highways = new LinkedList<>();
@@ -629,6 +747,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 DirectionKeyCommands.addRemoveCommandsToList(key, n, cmds);
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
+                closePopupMenuIfVisible();
                 
                 ((OsmPrimitveMenuItem)e.getSource()).setHighlighted(false);
                 
@@ -652,7 +771,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           if(p != null) {
             segmentPointed = MainApplication.getMap().mapView.getNearestWaySegment(p, o -> o.hasKey("highway"));
           }
-
+          
           for(Way w : highways) {
             int d = -1;
             String nodePos = null;
@@ -680,7 +799,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   item.addChangeListener(cl);
                   menu.add(item);
                   
-                  if(autoSet && segmentPointed != null && w.isHighlighted() && segmentPointed.getWay() == w && segmentPointed.getFirstNode() == n) {
+                  double distance = p != null ? n.getEastNorth().distance(MainApplication.getMap().mapView.getEastNorth(p.x, p.y)) : MainApplication.getMap().mapView.getScale() * 11;
+                  
+                  if(autoSet && segmentPointed != null && w.isHighlighted() && segmentPointed.getWay() == w && segmentPointed.getFirstNode() == n && distance > MainApplication.getMap().mapView.getScale() * 10) {
                     a.actionPerformed(new ActionEvent(item, 0, null));
                     return true;
                   }
@@ -691,7 +812,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   item.addChangeListener(cl);
                   menu.add(item);
 
-                  if(autoSet && segmentPointed != null && w.isHighlighted() && segmentPointed.getWay() == w && segmentPointed.getSecondNode() == n) {
+                  if(autoSet && segmentPointed != null && w.isHighlighted() && segmentPointed.getWay() == w && segmentPointed.getSecondNode() == n & distance >  MainApplication.getMap().mapView.getScale() * 10) {
                     a.actionPerformed(new ActionEvent(item, 0, null));
                     return true;
                   }
@@ -754,6 +875,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 DirectionKeyCommands.addRemoveCommandsToList(key, n, cmds);
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
+                closePopupMenuIfVisible();
                 MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
                 
                 if(wayPointedAt != null) {
@@ -766,10 +888,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           AtomicReference<WaySegment> forwardSegment = new AtomicReference<WaySegment>();
           AtomicReference<WaySegment> backwardSegment = new AtomicReference<WaySegment>();
           
-          for(int i = 1; i < ways[0].getNodesCount(); i++) {
+          for(int i = 0; i < ways[0].getNodesCount(); i++) {
             if(ways[0].getNode(i) == n) {
               forwardSegment.set(new WaySegment(ways[0], i));
-              backwardSegment.set(new WaySegment(ways[0], i-1));
+              
+              if(i != 0) {
+                backwardSegment.set(new WaySegment(ways[0], i-1));
+              }
+              
               break;
             }
           }
@@ -794,11 +920,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   MainApplication.getLayerManager().getActiveData().clearHighlightedWaySegments();
                   lastItem = null;
                 }
-                else if(Objects.equals(e.getSource(), forward)){
+                else if(Objects.equals(e.getSource(), forward) && forwardSegment.get() != null) {
                   MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(forwardSegment.get()));
                   lastItem = (JMenuItem)e.getSource();
                 }
-                else if(Objects.equals(e.getSource(), backward)){
+                else if(Objects.equals(e.getSource(), backward) && backwardSegment.get() != null) {
                   MainApplication.getLayerManager().getActiveData().setHighlightedWaySegments(Collections.singleton(backwardSegment.get()));
                   lastItem = (JMenuItem)e.getSource();
                 }
@@ -826,6 +952,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         if(Conf.isShowPopupEnabled() && menu.getComponentCount() > 0) {
           Point p = MainApplication.getMap().mapView.getPoint(n.getEastNorth());
           
+          setPopupMenu(menu);
           menu.show(MainApplication.getMap().mapView, p.x, p.y);
           return true;
         }
@@ -849,40 +976,99 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           Shortcut.registerShortcut("kindahackedinutils.relation-add", tr("Add selected objects to selected relation"), KeyEvent.VK_R, Shortcut.CTRL), false);
     }
     
+    private void handleSelection(List<OsmPrimitive> selection, boolean ignoreDoublets, boolean addDoublets) {
+      List<OsmPrimitive> members = ((Relation)selection.get(0)).getMemberPrimitivesList();
+      List<RelationMember> newMembers = ((Relation)selection.get(0)).getMembers();
+      Hashtable<OsmPrimitive, RelationMember> doublets = new Hashtable<>(); 
+      
+      final Collection<TaggingPreset> presets = TaggingPresets.getMatchingPresets(EnumSet.of(TaggingPresetType.forPrimitive((Relation)selection.get(0))), ((Relation)selection.get(0)).getKeys(), false);
+      
+      for(int i = 1; i < selection.size(); i++) {
+        final Set<String> roles = findSuggestedRoles(presets, selection.get(i));
+        final RelationMember member = new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", selection.get(i));
+        
+        if(!members.contains(selection.get(i))) {
+          newMembers.add(member);
+        }
+        else if(!ignoreDoublets) {
+          doublets.put(selection.get(i), member);
+        }
+      }
+      
+      if(!doublets.isEmpty() && !addDoublets) {
+        AddToRelationAgainDialog dialog = new AddToRelationAgainDialog(doublets);
+        dialog.showDialog();
+      }
+      
+      if(!doublets.isEmpty()) {
+        newMembers.addAll(doublets.values());
+      }
+      
+      if(members.size() != newMembers.size()) {
+        UndoRedoHandler.getInstance().add(new SequenceCommand("change relation", List.of(new ChangeMembersCommand((Relation)selection.get(0), newMembers), new SelectCommand(OsmDataManager.getInstance().getActiveDataSet(), selection))));
+      }
+    }
+    
     @Override
     public void actionPerformed(ActionEvent e) {
-      OsmPrimitive[] selection = MainApplication.getLayerManager().getEditDataSet().getSelected().toArray(OsmPrimitive[]::new);
+      List<OsmPrimitive> selection = MainApplication.getLayerManager().getEditDataSet().getSelected().stream().toList();
       
-      if(selection.length > 0 && selection[0] instanceof Relation) {
-        List<OsmPrimitive> members = ((Relation)selection[0]).getMemberPrimitivesList();
-        List<RelationMember> newMembers = ((Relation)selection[0]).getMembers();
-        Hashtable<OsmPrimitive, RelationMember> doublets = new Hashtable<>(); 
-        
-        final Collection<TaggingPreset> presets = TaggingPresets.getMatchingPresets(EnumSet.of(TaggingPresetType.forPrimitive((Relation)selection[0])), ((Relation)selection[0]).getKeys(), false);
-        
-        for(int i = 1; i < selection.length; i++) {
-          final Set<String> roles = findSuggestedRoles(presets, selection[i]);
-          final RelationMember member = new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", selection[i]);
+      if(selection.size() > 0 && selection.get(0) instanceof Relation) {
+        handleSelection(selection, false, Objects.equals(ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE, e.getActionCommand()));
+      }
+      else {
+        Relation r = new Relation();
+        String publicTansportType = null;
+        for(OsmPrimitive p : selection) {
+          String role = "";
           
-          if(!members.contains(selection[i])) {
-            newMembers.add(member);
+          if(!p.hasTag("type") && (p.hasTag("shelter_type", "public_transport") || p.hasKey("public_transport"))) {
+            r.put("type", "public_transport");
+            publicTansportType = "stop_area";
+            
+            Optional<Relation> relation = p.referrers(Relation.class).filter(pr -> pr.hasTag("public_transport", "stop_area")).findFirst();
+            
+            if(relation.isPresent()) {
+              ArrayList<OsmPrimitive> list = new ArrayList<>();
+              list.add(relation.get());
+              list.addAll(selection);
+              
+              handleSelection(list, true, false);
+              return;
+            }
           }
-          else {
-            doublets.put(selection[i], member);
+          if(p instanceof Way && p.hasKey("highway")) {
+            publicTansportType = "route";
           }
+          
+          if(p.hasKey("public_transport")) {
+            role = p.get("public_transport");
+            
+            if(Objects.equals(role, "stop_position")) {
+              role = "stop";
+            }
+            
+            if(!r.hasKey("name") && (Objects.equals(role, "stop") || Objects.equals(role, "platform"))) {
+              String name = p.get("name");
+              
+              if(name != null) {
+                r.put("name", name);
+              }
+            }
+          }
+          
+          r.addMember(new RelationMember(role, p));
         }
         
-        if(!doublets.isEmpty() && !Objects.equals(ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE, e.getActionCommand())) {
-          AddToRelationAgainDialog dialog = new AddToRelationAgainDialog(doublets);
-          dialog.showDialog();
+        if(publicTansportType != null) {
+          r.put("public_transport", publicTansportType);
         }
         
-        if(!doublets.isEmpty()) {
-          newMembers.addAll(doublets.values());
+        if(r.hasKey("name")) {
+          UndoRedoHandler.getInstance().add(new SequenceCommand("add relation", List.of(new AddCommand(OsmDataManager.getInstance().getActiveDataSet(), r), new SelectCommand(OsmDataManager.getInstance().getActiveDataSet(), selection))));
         }
-        
-        if(members.size() != newMembers.size()) {
-          UndoRedoHandler.getInstance().add(new ChangeMembersCommand((Relation)selection[0], newMembers));
+        else {
+          EditRelationAction.launchEditor(r);
         }
       }
     }
@@ -902,15 +1088,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
     
     private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
-      Relation r = null;
-      
-      OsmPrimitive[] primitives = selection.toArray(OsmPrimitive[]::new);
-      
-      if(primitives.length > 0 && primitives[0] instanceof Relation) {
-        r = (Relation)primitives[0];
-      }
-      
-      return r != null && primitives.length > 1;
+      return selection.size() > 1;
     }
     
     // Copied from org.openstreetmap.josm.gui.dialogs.relation.GenericRelationEditor
@@ -919,7 +1097,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               .map(preset -> preset.suggestRoleForOsmPrimitive(p))
               .filter(role -> !Utils.isEmpty(role))
               .collect(Collectors.toSet());
-  }
+    }
   }
   
   class DetachAction extends JosmAction {
@@ -962,7 +1140,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               if(w != way && !nodeHandled.get()) {
                 removeNodes1.add(n);
                 
-                if((!way.isClosed() || way.hasKey("building", "highway"))) {
+                if(((!way.isClosed() || way.hasKey("building", "highway"))) && !isHighOrRailway(way)) {
                   allNodes1.add(new Node(n.getEastNorth().add(wayExt.getAddValueForNode(n))));
                   moveNodes1.add(allNodes1.getLast());
                   cmds1.add(new AddCommand(ds, allNodes1.getLast()));
@@ -1076,7 +1254,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             }
           }
           
-          newNodes.add(newNodes.get(0));
+          if(way.isClosed()) {
+            newNodes.add(newNodes.get(0));
+          }
           
           if(!toRemove.isEmpty()) {
             cmds.add(0, new RemoveNodesCommand(way, toRemove));
@@ -1409,6 +1589,186 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
   }
   
+  class CreateAreaAction extends JosmAction {
+    public CreateAreaAction() {
+      super(tr("Create area between 2 selected nodes"), /* ICON() */ "newarea.svg", tr("Create area between 2 selected nodes"),
+          Shortcut.registerShortcut("kindahackedinutils.createArea", tr("Create area"), KeyEvent.VK_A,
+                  Shortcut.ALT_CTRL_SHIFT), false);
+    }
+    
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      if(Conf.isCreateAreaEnabled()) {
+        List<Way> ways = editDataSet.getSelectedWays().stream().toList();
+        
+        final AtomicReference<Way> wt = new AtomicReference<>();
+        
+        if(ways.isEmpty() || ways.size() == 1) {
+          if(!ways.isEmpty()) {
+            wt.set(ways.get(0));
+          }
+        }  
+        
+        List<Node> nodes = MainApplication.getLayerManager().getEditDataSet().getSelectedNodes().stream().filter(p -> wt.get() == null || wt.get().containsNode(p)).toList();
+        
+        if(nodes.size() == 2) {
+          List<? extends OsmPrimitive> ways1 = nodes.get(0).referrers(Way.class).toList();
+          List<? extends OsmPrimitive> ways2 = nodes.get(1).referrers(Way.class).filter(p -> ways1.contains(p)).toList();
+          
+          if(!ways2.isEmpty()) {
+            int firstIndex = -1;
+            int lastIndex = -1;
+            
+            Way w = (Way)ways2.get(0);
+            
+            if(wt.get() != null) {
+              w = wt.get();
+            }
+            
+            for(int i = 0; i < w.getRealNodesCount(); i++) {
+              if(w.getNode(i) == nodes.get(0)) {
+                firstIndex = i;
+              }
+              if(w.getNode(i) == nodes.get(1)) {
+                lastIndex = i;
+              }
+            }
+            
+            Way newWay = new Way();
+                    
+            if(w.isClosed() && firstIndex > lastIndex) {
+              for(int i = 0; i <= lastIndex; i++) {
+                newWay.addNode(w.getNode(i));
+              }
+              
+              lastIndex = w.getRealNodesCount()-1;
+            }
+            else if(firstIndex > lastIndex) {
+              int temp = firstIndex;
+              firstIndex = lastIndex;
+              lastIndex = temp;
+            }
+            
+            for(int i = firstIndex; i <= lastIndex; i++) {
+              newWay.addNode(w.getNode(i));
+            }
+            
+            newWay.addNode(newWay.getNode(0));
+            
+            TypeSelectionDialog d = new TypeSelectionDialog();
+            d.showDialog();
+            
+            if(d.getResult() != null) {
+              newWay.put(d.getResult());
+              UndoRedoHandler.getInstance().add(new SequenceCommand("", List.of(
+                  new AddCommand(MainApplication.getLayerManager().getEditDataSet(), newWay),
+                  new SelectCommand(editDataSet, Collections.singleton(newWay))
+                  )));
+            }
+          }
+        }
+        else if(balloonAction != null) {
+          if(nodes.size() != 2) {
+            nodes = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes().stream().toList();
+          }
+          
+          if(nodes.size() == 2) {
+            Way newWay = new Way();
+            newWay.addNode(nodes.get(0));
+            newWay.addNode(nodes.get(1));
+            editDataSet.addPrimitive(newWay);
+            final AtomicBoolean done = new AtomicBoolean(false);
+            
+            DataSelectionListener l = new DataSelectionListener() {
+              @Override
+              public void selectionChanged(SelectionChangeEvent event) {
+                if(event.getSelection().size() == 1 && event.getSelection().stream().filter(p -> p instanceof Way).count() == 1) {
+                  done.set(true);
+                  TypeSelectionDialog d = new TypeSelectionDialog();
+                  d.showDialog();
+                  
+                  if(d.getResult() != null) {
+                    UndoRedoHandler.getInstance().add(new ChangePropertyCommand(event.getSelection(), d.getResult().getKey(), d.getResult().getValue()));
+                  }
+                  else {
+                    editDataSet.removePrimitives(event.getSelection().stream().findFirst().get().getPrimitiveId());
+                  }
+                }
+              }
+            };
+            
+            editDataSet.addSelectionListener(l);
+            
+            balloonAction.actionPerformed(new ActionEvent(MainApplication.getMainFrame(), 0, ""));
+            
+            editDataSet.removePrimitive(newWay.getPrimitiveId());
+            
+            new Thread() {
+              public void run() {
+                int timer = 1000;
+                
+                while(!done.get() && (timer-=100) > 0) {
+                  try {
+                    Thread.sleep(100);
+                  } catch (InterruptedException e) {
+                    //ignore
+                  }
+                }
+                
+                editDataSet.removeSelectionListener(l);
+              };
+            }.start();
+          }
+        }
+      }
+    }
+    
+    @Override
+    protected void updateEnabledState() {
+        updateEnabledStateOnCurrentSelection();
+    }
+    
+    @Override
+    protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
+        if (selection == null) {
+            setEnabled(false);
+            return;
+        }
+        setEnabled(Conf.isCreateAreaEnabled() && checkSelection(selection));
+    }
+    
+    private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
+      List<? extends OsmPrimitive> seletedNodes = selection.stream().filter(s -> s instanceof Node && s.referrers(Way.class).count() > 0).toList();
+      
+      if(seletedNodes.size() == 2) {
+        List<? extends OsmPrimitive> ways1 = seletedNodes.get(0).referrers(Way.class).toList();
+        List<? extends OsmPrimitive> ways2 = seletedNodes.get(1).referrers(Way.class).filter(p -> ways1.contains(p)).toList();
+        
+        if(!ways2.isEmpty()) {
+          int index1 = -1;
+          int index2 = -1;
+          
+          Way w = (Way)ways2.get(0);
+          
+          for(int i = 0; i < w.getRealNodesCount(); i++) {
+            if(w.getNode(i) == seletedNodes.get(0)) {
+              index1 = i;
+            }
+            else if(w.getNode(i) == seletedNodes.get(1)) {
+              index2 = i;
+            }
+          }
+          
+          if(index1 != -1 && index2 != -1 && index2 != index1+1 && index2 != index1-1) {
+            return true;
+          }
+        }
+      }
+      
+      return balloonAction != null && seletedNodes.size() == 2;  
+    }
+  }
+    
   class AngleAction extends JosmAction implements KeyPressReleaseListener, MapViewPaintable, MouseMotionListener {
     private final ArrowPaintHelper ah = new ArrowPaintHelper(Utils.toRadians(35), 20);
     
@@ -1458,7 +1818,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               
               Node n = nodes.stream().findFirst().get();
               
-              Way pointedTo = MainApplication.getMap().mapView.getNearestWay(p, OsmPrimitive::isSelectable);
+              Way pointedTo = MainApplication.getMap().mapView.getNearestWay(p, pr -> pr.isSelectable() && isHighOrRailway(pr));
               
               if(pointedTo != null && !pointedTo.isHighlighted()) {
                 pointedTo = null;
@@ -1475,6 +1835,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 String simpleDirection = null;
                 Way[] ways = n.referrers(Way.class).toArray(Way[]::new);
+                Way[] highRailWays = n.referrers(Way.class).filter(pr -> isHighOrRailway(pr)).toArray(Way[]::new);
                 
                 ArrayList<OsmPrimitive> waysToHandleList = new ArrayList<>();
                 
@@ -1508,18 +1869,18 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 int wayIndex = 0;
                 
-                if((ways.length == 2 && n.hasTag("highway", "traffic_signals"))) {
-                  for(int i = 0; i < ways.length; i++) {
-                    if(n == ways[i].getNode(0)) {
+                if((highRailWays.length == 2 && n.hasTag("highway", "traffic_signals"))) {
+                  for(int i = 0; i < highRailWays.length; i++) {
+                    if(n == highRailWays[i].getNode(0)) {
                       wayIndex = i;
                       break;
                     }
                   }
                 }
                 
-                if(waysToHandleList.isEmpty() && ((ways.length == 1) || (ways.length == 2 && !n.hasKey("traffic_sign") && 
+                if(waysToHandleList.isEmpty() && ((highRailWays.length == 1) || (highRailWays.length == 2 && !n.hasKey("traffic_sign") && 
                     n.hasTag("highway", "traffic_signals", "give_way", "stop")))) {
-                  simpleDirection = getSimpleDirectionForPointed(MainApplication.getMap().mapView, ways[wayIndex], n, MainApplication.getMap().mapView.getEastNorth(p.x, p.y));
+                  simpleDirection = getSimpleDirectionForPointed(MainApplication.getMap().mapView, highRailWays[wayIndex], n, MainApplication.getMap().mapView.getEastNorth(p.x, p.y));
                   int pAngle = getDirectionForPointed(MainApplication.getMap().mapView, n, p);
                   
                   if(pAngle != -1) {
@@ -1534,6 +1895,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   else if(!waysToHandleList.isEmpty()) {
                     UndoRedoHandler.getInstance().add(new ChangePropertyCommand(waysToHandleList.get(0), DirectionTagMap.getDirectionKeyForPrimitive(waysToHandleList.get(0)), String.valueOf(test)));
                     OsmDataManager.getInstance().getActiveDataSet().setSelected(waysToHandleList.get(0));
+                    closePopupMenuIfVisible();
                   }
                   
                   return;
@@ -1588,6 +1950,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 cmdList.add(new ChangePropertyCommand(n, key, angle.get()));
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction", cmdList));
+                closePopupMenuIfVisible();
                 
                 if(pointedTo != null) {
                   final Way toHighlight = pointedTo;
@@ -1653,6 +2016,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                 
                 if(!nodeList.isEmpty() && p != null) {
                   UndoRedoHandler.getInstance().add(new ChangePropertyCommand(op, DirectionTagMap.getDirectionKeyForPrimitive(op), getDirectionFromHeading(calculateDirection(Geometry.getCentroid(nodeList), MainApplication.getMap().mapView.getEastNorth(p.x, p.y)))));
+                  closePopupMenuIfVisible();
                   
                   if(op instanceof Relation) {
                     OsmDataManager.getInstance().getActiveDataSet().setSelected(op);
@@ -1753,6 +2117,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         menu.add(item);
       }
       
+      setPopupMenu(menu);
       menu.show(MainApplication.getMap().mapView, p1.x, p1.y);
     }
     
@@ -2038,11 +2403,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       
       MainApplication.getMap().mapView.repaint();
     }
-    
-    private boolean isHighOrRailway(OsmPrimitive p) {
-      return p instanceof Way && p.hasKey("highway", "railway");
-    }
-    
+        
     private int getDirectionForPointed(MapView mv, Node n, Point mouseLocation) {
       int angle = -1;
       
@@ -2146,7 +2507,393 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       return angle;
     }
   }
+  
+  class FixSplitMultipolygonAction extends JosmAction {
+    public FixSplitMultipolygonAction() {
+      super(tr("Fix/split multipolygon"), /* ICON() */ "multipoly_update.svg", tr("Fix/split multipolygon"),
+          Shortcut.registerShortcut("kindahackedinutils.fixSplitMultipolygon", tr("Fix/split multipolygon"), KeyEvent.VK_X,
+                  Shortcut.ALT_SHIFT), false);
+    }
     
+    private void doFixMultipolygone(DataSet ds, Relation r) {
+      List<Way> outerWays = new LinkedList<>();
+      List<OsmPrimitive> inner = new LinkedList<>();
+      HashMap<Way, List<OsmPrimitive>> resultMap = new HashMap<>();
+      
+      for(int i = 0; i < r.getMembersCount(); i++) {
+        RelationMember m = r.getMember(i);
+        
+        if(m.hasRole("outer") && m.isWay() && m.getWay().isClosed()) {
+          outerWays.add(m.getWay());
+        }
+        else if(m.hasRole("inner")) {
+          inner.add(m.getMember());
+        }
+      }
+      
+      for(Way w : outerWays) {
+        Area a = Geometry.getArea(w.getNodes());
+        
+        for(int i = inner.size()-1; i >= 0; i--) {
+          OsmPrimitive p = inner.get(i);
+          
+          boolean found = false;
+          
+          if(p instanceof Node && a.contains(((Node) p).getEastNorth().getX(), ((Node) p).getEastNorth().getY())) {
+            found = true;
+          }
+          else if(p instanceof Way) {
+            Way test = (Way)p;
+            boolean inside = true;
+            
+            for(int k = 0; k < test.getRealNodesCount(); k++) {
+              if(!a.contains(test.getNode(k).getEastNorth().getX(), test.getNode(k).getEastNorth().getY())) {
+                inside = false;
+                break;
+              }
+            }
+            
+            found = inside;
+          }
+          
+          if(found) {
+            List<OsmPrimitive> list = resultMap.get(w);
+            
+            if(list == null) {
+              list = new LinkedList<>();
+              resultMap.put(w, list);
+            }
+            
+            list.add(p);
+            
+            inner.remove(i);
+          }
+        }
+      }
+      
+      LinkedList<Command> cmds = new LinkedList<>();
+      
+      boolean realtionFound = false;
+      
+      for(int i = 0; i < outerWays.size(); i++) {
+        List<OsmPrimitive> list = resultMap.get(outerWays.get(i));
+        
+        if(list != null) {
+          List<RelationMember> in = new LinkedList<>();
+          
+          in.add(new RelationMember("outer", outerWays.get(i)));
+          
+          for(OsmPrimitive p : list) {
+            in.add(new RelationMember("inner", p));
+          }
+          
+          if(!realtionFound) {
+            cmds.add(new ChangeMembersCommand(r, in));
+            realtionFound = true;
+          }
+          else {
+            Relation r1 = new Relation();
+            r1.setMembers(in);
+            r.getKeys().forEach((key,value) -> r1.put(key, value));
+            cmds.add(new AddCommand(ds, r1));
+          }
+        }
+        else {
+          Way w = outerWays.get(i);
+          r.getKeys().forEach((key,value) -> {
+            if(!key.equals("type")) {
+              cmds.add(new ChangePropertyCommand(w, key, value));
+            }
+          });
+        }
+      }
+      
+      if(!realtionFound) {
+        cmds.add(new DeleteCommand(ds, r));
+      }
+      
+      if(!cmds.isEmpty()) {
+        UndoRedoHandler.getInstance().add(new SequenceCommand("fix multipolygone", cmds));
+      }
+    }
+    
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      if(Conf.isFixSplitMultipolygonEnabled()) {
+        DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
+        
+        if(ds.getSelectedRelations().size() == 1) {
+          doFixMultipolygone(ds, ds.getSelectedRelations().stream().toList().get(0));
+        }
+        else if(splitObjectAction != null) {
+          splitObjectAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, "Split object"));
+          
+          if(ds.getSelected().size() == 2 && ds.getSelectedWays().size() == 2) {
+            List<Relation> r = ds.getSelectedWays().stream().findFirst().get().referrers(Relation.class).toList();
+            
+            if(r.size() == 1 && ds.getSelectedWays().stream().filter(p -> p.referrers(Relation.class).allMatch(p1 -> r.get(0) == p1)).count() == 2) {
+              doFixMultipolygone(ds, r.get(0));
+            }
+          }
+        }
+      }
+    }
+    
+    @Override
+    protected void updateEnabledState() {
+        updateEnabledStateOnCurrentSelection();
+    }
+    
+    @Override
+    protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
+        if (selection == null) {
+            setEnabled(false);
+            return;
+        }
+        setEnabled(Conf.isFixSplitMultipolygonEnabled() && checkSelection(selection));
+    }
+    
+    private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
+      boolean result = false;
+      
+      if(splitObjectAction != null) {
+        List<? extends OsmPrimitive> ways = selection.stream().filter(p -> p instanceof Way).toList();
+        List<? extends OsmPrimitive> nodes = selection.stream().filter(p -> p instanceof Node).toList();
+        
+        if(nodes.size() == 2 && (ways.isEmpty() || ways.size() == 1)) {
+          List<Way> ways0 = nodes.get(0).referrers(Way.class).toList();
+          List<Way> ways1 = nodes.get(1).referrers(Way.class).toList();
+          
+          result = (ways0.size() >= 1 && ways0.stream().anyMatch(p -> ways1.contains(p))) || (!ways.isEmpty() && !ways0.isEmpty() && !ways1.isEmpty() && ways0.stream().anyMatch(p -> p == ways.get(0)) && ways1.stream().anyMatch(p -> p == ways.get(0)));
+        }
+      }
+      
+      return result || (selection.size() == 1 && selection.stream().filter(p -> p.isMultipolygon()).count() == 1);
+    }
+  }
+  
+  class CloseWayAction extends JosmAction {
+    public CloseWayAction() {
+      super(tr("Close selected ways"), /* ICON() */ "closeway.svg", tr("Close selected ways"),
+          Shortcut.registerShortcut("kindahackedinutils.closeWays", tr("Close selected ways"), KeyEvent.VK_C,
+                  Shortcut.ALT_CTRL_SHIFT), false);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent arg0) {
+      DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
+      
+      List<Command> cmds = new LinkedList<>();
+      
+      ds.getSelectedWays().forEach(w -> {
+        if(!w.isClosed()) {
+          List<Node> nodes = new LinkedList<>();
+          
+          for(int i = 0; i < w.getRealNodesCount(); i++) {
+            if(!nodes.contains(w.getNode(i))) {
+              nodes.add(w.getNode(i));
+            }
+          }
+          
+          nodes.add(nodes.get(0));
+          
+          cmds.add(new ChangeNodesCommand(w, nodes));
+        }
+      });
+      
+      if(!cmds.isEmpty()) {
+        UndoRedoHandler.getInstance().add(new SequenceCommand("Close ways", cmds));
+      }
+    }
+    
+    @Override
+    public void destroy() {
+      System.out.println("destroy");
+      super.destroy();
+    }
+    
+    @Override
+    protected void updateEnabledState() {
+        updateEnabledStateOnCurrentSelection();
+    }
+    
+    @Override
+    protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
+        if (selection == null) {
+            setEnabled(false);
+            return;
+        }
+        setEnabled(selection.stream().anyMatch(p -> p instanceof Way && !((Way)p).isClosed() && ((Way)p).getRealNodesCount() > 2));
+    }
+  }
+  
+  class WrapAroundAction extends JosmAction {
+    public WrapAroundAction() {
+      super(tr("Wrap way around other way"), /* ICON() */ "wraparound.svg", tr("Wrap way around other way"),
+          Shortcut.registerShortcut("kindahackedinutils.wrapAroundWay", tr("Wrap way around other way"), KeyEvent.VK_F,
+                  Shortcut.SHIFT), false);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      if(Conf.isWrapAroundEnabled()) {
+        DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
+        
+        Way w0 = ds.getSelectedWays().stream().toList().get(0);
+        Way w1 = ds.getSelectedWays().stream().toList().get(1);
+        
+        Node np = ds.getSelectedNodes().stream().toList().get(0);
+        Node n0 = ds.getSelectedNodes().stream().toList().get(1);
+        Node n1 = ds.getSelectedNodes().stream().toList().get(2);
+        
+        int index0 = -1;
+        int index1 = -1;
+        int index2 = -1;
+        
+        for(int i = 0; i < w0.getRealNodesCount(); i++) {
+          if(w0.getNode(i) == np) {
+            index0 = i;
+          }
+          else if(w0.getNode(i) == n0) {
+            index1 = i;
+          }
+          else if(w0.getNode(i) == n1) {
+            index2 = i;
+          }
+        }
+        
+        boolean forward = (index0 < index1 && index1 < index2 && index0 < index2) || 
+            ((index0 > index1 && index1 < index2) || (index0 < index1 && index1 > index2)) && index0 > index2;
+              
+        int firstIndex = -1;
+        int lastIndex = -1;
+        
+        for(int i = 0; i < w1.getRealNodesCount(); i++) {
+          if(w1.getNode(i) == n0) {
+            firstIndex = i;
+          }
+          if(w1.getNode(i) == n1) {
+            lastIndex = i;
+          }
+        }
+        
+        List<Node> insertNodes = new LinkedList<>();
+        
+        boolean insertBegin = false;
+        
+        if(w1.isClosed() && firstIndex > lastIndex) {
+          for(int i = 0; i < lastIndex; i++) {
+            insertNodes.add(w1.getNode(i));
+          }
+          
+          lastIndex = w1.getNodesCount()-1;
+          insertBegin = true;
+        }
+        else if(firstIndex > lastIndex) {
+          int temp = firstIndex;
+          firstIndex = lastIndex;
+          lastIndex = temp;        
+          
+          Node n = n0;
+          n0 = n1;
+          n1 = n;
+          
+          forward = !forward;
+        }
+        
+        int count = 0;
+        
+        for(int i = firstIndex+1; i < lastIndex; i++) {
+          if(insertBegin) {
+            insertNodes.add(count++, w1.getNode(i));
+          }
+          else {
+            insertNodes.add(w1.getNode(i));
+          }
+        }
+        
+        if(!insertNodes.isEmpty()) {
+          List<Node> newNodeList = new LinkedList<>();
+          
+          for(int i = 0; i < w0.getRealNodesCount(); i++) {
+            newNodeList.add(w0.getNode(i));
+            
+            if(forward && n0 == w0.getNode(i)) {
+              for(Node n : insertNodes) {
+                newNodeList.add(n);
+              }
+            }
+            else if(!forward && n1 == w0.getNode(i)) {
+              for(int k = insertNodes.size()-1; k >= 0; k--) {
+                newNodeList.add(insertNodes.get(k));
+              }
+            }
+          }
+          
+          if(w0.isClosed()) {
+            newNodeList.add(newNodeList.get(0));
+          }
+          
+          UndoRedoHandler.getInstance().add(new SequenceCommand("wrap line around", List.of(new ChangeNodesCommand(ds, w0, newNodeList), new SelectCommand(ds, Collections.singleton(w0)))));
+        }
+      }
+    }
+
+    @Override
+    protected void updateEnabledState() {
+        updateEnabledStateOnCurrentSelection();
+    }
+    
+    @Override
+    protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
+        if (selection == null) {
+            setEnabled(false);
+            return;
+        }
+        setEnabled(Conf.isWrapAroundEnabled() && checkSelection(selection));
+    }
+    
+    private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
+      boolean result = false;
+      
+      
+      List<? extends OsmPrimitive> ways = selection.stream().filter(p -> p instanceof Way).toList();
+      List<? extends OsmPrimitive> nodes = selection.stream().filter(p -> p instanceof Node).toList();
+      
+      if(nodes.size() == 3 && ways.size() == 2) {
+        List<Way> ways0 = nodes.get(0).referrers(Way.class).toList();
+        List<Way> ways1 = nodes.get(1).referrers(Way.class).toList();
+        
+        result = ways0.stream().anyMatch(p -> ways.contains(p) && ((Way)p).containsNode((Node)nodes.get(0)) && ((Way)p).containsNode((Node)nodes.get(1))) &&
+            ways1.stream().anyMatch(p -> ways.contains(p) && ((Way)p).containsNode((Node)nodes.get(0)) && ((Way)p).containsNode((Node)nodes.get(1)));
+        
+        if(result) {
+          int index0 = -1;
+          int index1 = -1;
+          
+          Way w = (Way)ways.get(0);
+          
+          for(int i = 0; i < w.getRealNodesCount(); i++) {
+            if(w.getNode(i) == nodes.get(1)) {
+              index0 = i;
+            }
+            else if(w.getNode(i) == nodes.get(2)) {
+              index1 = i;
+            }
+          }
+          
+          result = Math.abs(index0-index1) == 1 || w.isClosed() && (index0 == w.getRealNodesCount()-1 && index1 == 0 || index1 == w.getRealNodesCount()-1 && index0 == 0);
+        }
+      }
+      
+      return result;
+    }
+  }
+  
+  private static boolean isHighOrRailway(OsmPrimitive p) {
+    return p instanceof Way && p.hasKey("highway", "railway");
+  }
+  
   private static int calculateDirection(EastNorth en1, EastNorth en2) {
     return (int)Math.round(Math.round(Utils.toDegrees(en1.heading(en2))));
   }
@@ -2860,6 +3607,139 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             setText(l.getText());
         }
         return this;
+    }
+  }
+  
+  private static final class TypeSelectionDialog extends ExtendedDialog {
+    private static final Comparator<AutoCompletionItem> DEFAULT_AC_ITEM_COMPARATOR =
+            (o1, o2) -> String.CASE_INSENSITIVE_ORDER.compare(o1.getValue(), o2.getValue());
+            
+    private JList<Tag> list;
+    
+    private AutoCompComboBox<AutoCompletionItem> keys;
+    private AutoCompComboBox<AutoCompletionItem> values;
+    private final transient AutoCompletionManager autocomplete;
+    private Tag result;
+    
+    public TypeSelectionDialog() {
+      super(MainApplication.getMainFrame(), tr("Select type of area"), new String[] {tr("Ok"),tr("Cancel")}, true, true);
+      autocomplete = AutoCompletionManager.of(OsmDataManager.getInstance().getActiveDataSet());
+      setRememberWindowGeometry(getClass().getName() + ".geometry",
+          WindowGeometry.centerInWindow(MainApplication.getMainFrame(), new Dimension(350, 350)));
+      setButtonIcons("ok","cancel");
+      
+      List<AutoCompletionItem> keyList = autocomplete.getTagKeys(DEFAULT_AC_ITEM_COMPARATOR);
+
+      keys = new AutoCompComboBox<>();
+      keys.getModel().setComparator(Comparator.naturalOrder()); // according to Comparable
+      keys.setEditable(true);
+      keys.setPrototypeDisplayValue(new AutoCompletionItem("dummy"));
+      keys.getModel().addAllElements(keyList);
+      
+      values = new AutoCompComboBox<>();
+      values.getModel().setComparator(Comparator.naturalOrder());
+      values.setEditable(true);
+      values.setPrototypeDisplayValue(new AutoCompletionItem("dummy"));
+      
+      keys.addItemListener(e -> {
+        if(e.getStateChange() == ItemEvent.SELECTED) {
+          values.getModel().removeAllElements();
+          values.getModel().addAllElements(autocomplete.getTagValues(((AutoCompletionItem)e.getItem()).getValue()));
+        }
+      });
+      
+      DefaultListModel<Tag> m = new DefaultListModel<>();
+      m.addElement(new Tag("landuse","grass"));
+      m.addElement(new Tag("landuse","meadow"));
+      m.addElement(new Tag("landuse","forest"));
+      m.addElement(new Tag("landuse","farmland"));
+      m.addElement(new Tag("natural","scrub"));
+      m.addElement(new Tag("natural","wood"));
+      
+      list = new JList<Tag>(m);
+      list.setCellRenderer(new DefaultListCellRenderer() {
+        @Override
+        public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+          Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+          
+          if(c instanceof JLabel) {
+            ((JLabel)c).setText(tr(((Tag)value).getValue()));
+          }
+          
+          return c;
+        }
+      });
+      list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+      list.addListSelectionListener(e -> {
+        if(!e.getValueIsAdjusting()) {
+          keys.setSelectedItemText(list.getSelectedValue().getKey());
+          values.setSelectedItemText(list.getSelectedValue().getValue());
+          
+          buttons.get(0).setEnabled(true);
+        }
+      });
+      
+      ItemListener updateButtonState = e -> {
+        buttons.get(0).setEnabled(!keys.getText().isBlank() && !values.getText().isBlank());
+      };
+      
+      keys.addItemListener(updateButtonState);
+      values.addItemListener(updateButtonState);
+      
+      JPanel content = new JPanel();
+      content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+      content.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
+      
+      addToPanel(content, new JLabel(tr("Quick selection list:")));
+      addToPanel(content, new JScrollPane(list), false);
+      content.add(Box.createRigidArea(new Dimension(0, 10)));
+      addToPanel(content, new JLabel(tr("Please select a key")));
+      addToPanel(content, keys);
+      content.add(Box.createRigidArea(new Dimension(0, 5)));
+      addToPanel(content, new JLabel(tr("Choose a value")));
+      addToPanel(content, values);
+      content.add(Box.createRigidArea(new Dimension(0, 10)));
+      setDefaultButton(1);
+      
+      setContent(content, false);
+    }
+    
+    private JComponent addToPanel(JPanel content, JComponent c) {
+      return addToPanel(content, c, true);
+    }
+    
+    private JComponent addToPanel(JPanel content, JComponent c, boolean fixedHeight) {
+      c.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+      content.add(c);
+      
+      if(fixedHeight) {
+        c.setMaximumSize(new Dimension(Integer.MAX_VALUE, c.getPreferredSize().height));
+      }
+      
+      return c;
+    }
+    
+    @Override
+    public void setVisible(boolean visible) {
+      if(visible) {
+        buttons.get(0).setEnabled(false);
+      }
+      
+      super.setVisible(visible);
+    }
+    
+    
+    
+    public Tag getResult() {
+      return result;
+    }
+    
+    protected void buttonAction(int buttonIndex, ActionEvent evt) {
+      if(buttonIndex == 0) {
+        result = new Tag(Utils.removeWhiteSpaces(keys.getEditorItemAsString()), Utils.removeWhiteSpaces(values.getEditorItemAsString()));
+      }
+     
+      super.buttonAction(buttonIndex, evt);
     }
   }
   

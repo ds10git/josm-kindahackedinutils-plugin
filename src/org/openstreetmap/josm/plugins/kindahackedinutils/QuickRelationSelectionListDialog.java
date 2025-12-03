@@ -13,6 +13,7 @@ import java.awt.event.MouseMotionListener;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +36,7 @@ import org.openstreetmap.josm.data.osm.IRelation;
 import org.openstreetmap.josm.data.osm.IWay;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.event.AbstractDatasetChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataSetListener;
@@ -71,6 +73,12 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
         IRelation<?> r = relationList.getSelectedValue();
        
         if(r instanceof Relation) {
+          List<RelationMember> members = ((Relation)r).getMembers();
+          
+          for(RelationMember m : members) {
+            m.getMember().setHighlighted(false);
+          }
+          
           deleteRelation(Collections.singleton((Relation)r));
         }
       }

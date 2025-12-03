@@ -3,7 +3,6 @@ package org.openstreetmap.josm.plugins.kindahackedinutils;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
-import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ItemEvent;
 
@@ -30,6 +29,8 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   private JCheckBox splitWays;
   private JCheckBox createNode;
   private JCheckBox detachEnabled;
+  private JCheckBox wrapAroundEnabled;
+  private JCheckBox createAreaEnabled;
   
   public KindaHackedInUtilsPreferences() {
     super("detach", "KindaHackedInUtils", tr("Change settings for KindaHackedInUtils plugin."));
@@ -47,6 +48,8 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     splitWays = new JCheckBox(tr("Split ways at mouse location with keyboard key K"), Conf.isSplitWay());
     createNode = new JCheckBox(tr("Create new node at mouse location with keyboard key B"), Conf.isCreateNode());
     detachEnabled = new JCheckBox(tr("Detach nodes from ways and move them with keyboard key Z"), Conf.isDetachEnabled());
+    wrapAroundEnabled = new JCheckBox(tr("Wrap way around other way with keybord keys Shift+F"), Conf.isWrapAroundEnabled());
+    createAreaEnabled = new JCheckBox(tr("Create area between 2 points of a line with keyboard keys Alt+Ctrl+Shift+A"), Conf.isCreateAreaEnabled());
     
     toFront = new JCheckBox(tr("Get JOSM to front whenever mouse enters map view or dialog window (might not work depending on OS and window manager)"), Conf.isToFront());
     
@@ -88,9 +91,15 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
       p.add(splitWays, GBC.std(0, 4));
     }
     
-    p.add(directionEnabled, GBC.std(0, 5));
+    GBC gc = GBC.std(0, 6);
     
-    GridBagConstraints gc = GBC.std(0, 6);
+    p.add(createAreaEnabled, gc);
+    gc.gridy++;
+    p.add(wrapAroundEnabled, gc);
+    gc.gridy++;
+    p.add(directionEnabled, gc);
+    gc.gridy++;
+    
     gc.insets.left = 20;
     
     p.add(directionHelperLineEnabled, gc);
@@ -116,19 +125,21 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
 
   @Override
   public boolean ok() {
-    Conf.setToFront(toFront.isSelected());
-    Conf.setDetachEnabled(detachEnabled.isSelected());
-    Conf.setCreateNode(createNode.isSelected());
-    Conf.setSplitWay(splitWays.isSelected());
-    Conf.setDirectionEnabled(directionEnabled.isSelected());
-    Conf.setObjectSpecificDirection(directionObjectSpecific.isSelected());
-    Conf.setSimpleDirection(directionSimple.isSelected());
-    Conf.setNaturalDirection(directionNatural.isSelected());
-    Conf.setAutoSetEnabled(directionAutoSet.isSelected());
-    Conf.setShowPopupEnabled(directionShowPopup.isSelected());
-    Conf.setDirectionFromNodeForWaysEnabled(directionFromNodeForWays.isSelected());
-    Conf.setDirectionHelperLineEnabled(directionHelperLineEnabled.isSelected());
-    Conf.setDirectionHelperConeEnabled(directionHelperConeEnabled.isSelected());
+    Conf.setValue(Conf.TO_FRONT, toFront.isSelected());
+    Conf.setValue(Conf.DETACH_ENABLED, detachEnabled.isSelected());
+    Conf.setValue(Conf.CREATE_NODE, createNode.isSelected());
+    Conf.setValue(Conf.SPLIT_WAY, splitWays.isSelected());
+    Conf.setValue(Conf.DIRECTION_ENABLED, directionEnabled.isSelected());
+    Conf.setValue(Conf.DIRECTION_OBJECT_SPECIFIC, directionObjectSpecific.isSelected());
+    Conf.setValue(Conf.DIRECTION_SIMPLE, directionSimple.isSelected());
+    Conf.setValue(Conf.DIRECTION_NATURAL, directionNatural.isSelected());
+    Conf.setValue(Conf.DIRECTION_AUTO_SET, directionAutoSet.isSelected());
+    Conf.setValue(Conf.DIRECTION_SHOW_POPUP, directionShowPopup.isSelected());
+    Conf.setValue(Conf.DIRECTION_FROM_NODE_FOR_WAYS, directionFromNodeForWays.isSelected());
+    Conf.setValue(Conf.DIRECTION_HELPER_LINE_ENABLED, directionHelperLineEnabled.isSelected());
+    Conf.setValue(Conf.DIRECTION_HELPER_CONE_ENABLED, directionHelperConeEnabled.isSelected());
+    Conf.setValue(Conf.CREATE_AREA_ENABLED, createAreaEnabled.isSelected());
+    Conf.setValue(Conf.WRAP_AROUND_ENABLED, wrapAroundEnabled.isSelected());
     
     return false;
   }
