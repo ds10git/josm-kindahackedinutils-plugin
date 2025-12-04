@@ -1603,13 +1603,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         
         final AtomicReference<Way> wt = new AtomicReference<>();
         
-        if(ways.isEmpty() || ways.size() == 1) {
-          if(!ways.isEmpty()) {
-            wt.set(ways.get(0));
-          }
-        }  
+        if(ways.size() == 1) {
+          wt.set(ways.get(0));
+        }
         
-        List<Node> nodes = MainApplication.getLayerManager().getEditDataSet().getSelectedNodes().stream().filter(p -> wt.get() == null || wt.get().containsNode(p)).toList();
+        List<Node> nodes = MainApplication.getLayerManager().getEditDataSet().getSelectedNodes().stream().filter(p -> ways.isEmpty() || (wt.get() != null && wt.get().containsNode(p))).toList();
+        
+        boolean balloon = false;
         
         if(nodes.size() == 2) {
           List<? extends OsmPrimitive> ways1 = nodes.get(0).referrers(Way.class).toList();
@@ -1666,8 +1666,15 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   )));
             }
           }
+          else if(balloonAction != null) {
+            balloon = true;
+          }
         }
         else if(balloonAction != null) {
+          balloon = true;
+        }
+        
+        if(balloon) {
           if(nodes.size() != 2) {
             nodes = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes().stream().toList();
           }
