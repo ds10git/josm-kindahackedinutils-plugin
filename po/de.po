@@ -422,50 +422,50 @@ msgstr "Fenster: {0}"
 msgid "Quick Relation Selection mouse pointing highlighting color"
 msgstr "Farbe für Maushervorhebung für Relation-Schnellauswahl"
 
-#~ msgid "hgv"
-#~ msgstr "LKW"
+msgid "hgv"
+msgstr "LKW"
 
-#~ msgid "caravan"
-#~ msgstr "Wohnmobil"
+msgid "caravan"
+msgstr "Wohnmobil"
 
-#~ msgid "motorcar"
-#~ msgstr "Auto"
+msgid "motorcar"
+msgstr "Auto"
 
-#~ msgid "bus"
-#~ msgstr "Bus"
+msgid "bus"
+msgstr "Bus"
 
-#~ msgid "agricultural"
-#~ msgstr "Landwirtschaftlich"
+msgid "agricultural"
+msgstr "Landwirtschaftlich"
 
-#~ msgid "motorcycle"
-#~ msgstr "Motorrad"
+msgid "motorcycle"
+msgstr "Motorrad"
 
-#~ msgid "bicycle"
-#~ msgstr "Fahrrad"
+msgid "bicycle"
+msgstr "Fahrrad"
 
-#~ msgid "hazmat"
-#~ msgstr "Gefahrgut"
+msgid "hazmat"
+msgstr "Gefahrgut"
 
-#~ msgid "psv"
-#~ msgstr "Linienverkehr"
+msgid "psv"
+msgstr "Linienverkehr"
 
-#~ msgid "emergency"
-#~ msgstr "Rettungsfahrzeuge"
+msgid "emergency"
+msgstr "Rettungsfahrzeuge"
 
-#~ msgid "grass"
-#~ msgstr "Gras"
+msgid "grass"
+msgstr "Gras"
 
-#~ msgid "meadow"
-#~ msgstr "Wiese"
+msgid "meadow"
+msgstr "Wiese"
 
-#~ msgid "forest"
-#~ msgstr "Forst"
+msgid "forest"
+msgstr "Forst"
 
-#~ msgid "wood"
-#~ msgstr "Wald"
+msgid "wood"
+msgstr "Wald"
 
-#~ msgid "farmland"
-#~ msgstr "Feld"
+msgid "farmland"
+msgstr "Feld"
 
-#~ msgid "scrub"
-#~ msgstr "Buschland"
+msgid "scrub"
+msgstr "Buschland"
