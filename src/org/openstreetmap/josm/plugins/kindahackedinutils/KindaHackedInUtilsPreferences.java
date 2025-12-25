@@ -24,6 +24,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   private JCheckBox directionFromNodeForWays;
   private JCheckBox directionHelperLineEnabled;
   private JCheckBox directionHelperConeEnabled;
+  private JCheckBox optimizeSplitMultipolygon;
   
   private JCheckBox toFront;
   private JCheckBox splitWays;
@@ -50,6 +51,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     detachEnabled = new JCheckBox(tr("Detach nodes from ways and move them with keyboard key Z"), Conf.isDetachEnabled());
     wrapAroundEnabled = new JCheckBox(tr("Wrap way around other way with keybord keys Shift+F"), Conf.isWrapAroundEnabled());
     createAreaEnabled = new JCheckBox(tr("Create area between 2 points of a line with keyboard keys Alt+Ctrl+Shift+A"), Conf.isCreateAreaEnabled());
+    optimizeSplitMultipolygon = new JCheckBox(tr("Optimize/split multipolygon wiht keyboard keys Alt+Shift+X"), Conf.isOptimizeSplitMultipolygonEnabled());
     
     toFront = new JCheckBox(tr("Get JOSM to front whenever mouse enters map view or dialog window (might not work depending on OS and window manager)"), Conf.isToFront());
     
@@ -97,6 +99,8 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     gc.gridy++;
     p.add(wrapAroundEnabled, gc);
     gc.gridy++;
+    p.add(optimizeSplitMultipolygon, gc);
+    gc.gridy++;
     p.add(directionEnabled, gc);
     gc.gridy++;
     
@@ -140,7 +144,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     Conf.setValue(Conf.DIRECTION_HELPER_CONE_ENABLED, directionHelperConeEnabled.isSelected());
     Conf.setValue(Conf.CREATE_AREA_ENABLED, createAreaEnabled.isSelected());
     Conf.setValue(Conf.WRAP_AROUND_ENABLED, wrapAroundEnabled.isSelected());
-    
+    Conf.setValue(Conf.OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED, optimizeSplitMultipolygon.isSelected());
     return false;
   }
 

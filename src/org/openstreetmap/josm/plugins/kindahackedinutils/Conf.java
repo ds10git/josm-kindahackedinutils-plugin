@@ -19,7 +19,7 @@ public class Conf {
   static final String CREATE_NODE = "kindahackedinutils.createNode";
   static final String SPLIT_WAY = "kindahackedinutils.splitWay";
   static final String DETACH_ENABLED = "kindahackedinutils.detachEnabled";
-  static final String FIX_SPLIT_MULTIPOLYGON_ENABLED = "kindahackedinutils.fixSplitMultipolygon";
+  static final String OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED = "kindahackedinutils.fixSplitMultipolygon";
   static final String WRAP_AROUND_ENABLED = "kindahackedinutils.wrapAroundEnabled";
   static final String CREATE_AREA_ENABLED = "kindahackedinutils.createAreaEnabled";
   
@@ -89,8 +89,8 @@ public class Conf {
     return Config.getPref().getBoolean(DIRECTION_FROM_NODE_FOR_WAYS, true);
   }
     
-  public static boolean isFixSplitMultipolygonEnabled() {
-    return Config.getPref().getBoolean(FIX_SPLIT_MULTIPOLYGON_ENABLED, false);
+  public static boolean isOptimizeSplitMultipolygonEnabled() {
+    return Config.getPref().getBoolean(OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED, true);
   }
     
   public static boolean isWrapAroundEnabled() {

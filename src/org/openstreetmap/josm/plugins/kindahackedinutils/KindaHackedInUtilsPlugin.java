@@ -72,6 +72,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
 import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
@@ -258,7 +259,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     TurnRestrictionAction turnRestrictionAction = new TurnRestrictionAction();
     CreateAreaAction closedLineAction = new CreateAreaAction();
     UndoRedoSelectedAction undo = new UndoRedoSelectedAction();
-    FixSplitMultipolygonAction fix = new FixSplitMultipolygonAction();
+    OptimizeSplitMultipolygonAction optimizeMultipolygon = new OptimizeSplitMultipolygonAction();
     WrapAroundAction wrapAroundWay = new WrapAroundAction();
     closeWays = new CloseWayAction();
     
@@ -407,23 +408,23 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     MainMenu.add(toolsMenu, addToRelation);
     MainMenu.add(toolsMenu, closedLineAction);
     
-    if(Conf.isFixSplitMultipolygonEnabled()) {
-      MainMenu.add(toolsMenu, fix);
+    if(Conf.isOptimizeSplitMultipolygonEnabled()) {
+      MainMenu.add(toolsMenu, optimizeMultipolygon);
     }
     else {
       prefFixSplitListener = new PreferenceChangedListener() {
         @Override
         public void preferenceChanged(PreferenceChangeEvent e) {
-          if(Conf.isFixSplitMultipolygonEnabled()) {
+          if(Conf.isOptimizeSplitMultipolygonEnabled()) {
             prefFixSplitListener = null;
-            MainMenu.add(toolsMenu, fix);
-            fix.updateEnabledState();
-            Config.getPref().removeKeyPreferenceChangeListener(Conf.FIX_SPLIT_MULTIPOLYGON_ENABLED, this);
+            MainMenu.add(toolsMenu, optimizeMultipolygon);
+            optimizeMultipolygon.updateEnabledState();
+            Config.getPref().removeKeyPreferenceChangeListener(Conf.OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED, this);
           }
         }
       };
       
-      Config.getPref().addKeyPreferenceChangeListener(Conf.FIX_SPLIT_MULTIPOLYGON_ENABLED, prefFixSplitListener);
+      Config.getPref().addKeyPreferenceChangeListener(Conf.OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED, prefFixSplitListener);
     }
     MainMenu.add(toolsMenu, wrapAroundWay);
     MainMenu.add(toolsMenu, closeWays);
@@ -479,7 +480,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       public void layerRemoving(LayerRemoveEvent e) {
         if(e.isLastLayer()) {
           if(prefFixSplitListener != null) {
-            Config.getPref().removeKeyPreferenceChangeListener(Conf.FIX_SPLIT_MULTIPOLYGON_ENABLED, prefFixSplitListener);
+            Config.getPref().removeKeyPreferenceChangeListener(Conf.OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED, prefFixSplitListener);
             prefFixSplitListener = null;
           }
           
@@ -1019,6 +1020,92 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       else {
         Relation r = new Relation();
         String publicTansportType = null;
+        
+        if(selection.size() == 3 && selection.stream().filter(p -> p instanceof Node).count() == 3) {
+          Relation temp = new Relation();
+          
+          Node device = null;
+          Node n1 = null;
+          Node n2 = null;
+          
+          for(OsmPrimitive p : selection) {
+            if(p.referrers(Way.class).count() == 0) {
+              device = (Node)p;
+            }
+            else if(n1 == null) {
+              n1 = (Node)p;
+            }
+            else {
+              n2 = (Node)p;
+            }
+          }
+          
+          if(device != null && n1 != null && n2 != null) {
+            temp.addMember(new RelationMember("device", device));
+            
+            Node from = null;
+            
+            if(n1.distanceSq(device) > n2.distanceSq(device)) {
+              temp.addMember(new RelationMember("from", from = n1));
+              temp.addMember(new RelationMember("to", n2));
+            }
+            else {
+              temp.addMember(new RelationMember("from", from = n2));
+              temp.addMember(new RelationMember("to", n1));              
+            }
+            
+            temp.put("type", "enforcement");
+
+            JTextField maxspeed = new JTextField();
+            
+            JPanel maxspeedPanel = new JPanel();
+            maxspeedPanel.setLayout(new BoxLayout(maxspeedPanel, BoxLayout.LINE_AXIS));
+            maxspeedPanel.add(new JLabel(tr("maxspeed")+":"));
+            maxspeedPanel.add(Box.createRigidArea(new Dimension(5,0)));
+            maxspeedPanel.add(maxspeed);
+            maxspeedPanel.setVisible(false);
+            
+            List<Way> ways = from.referrers(Way.class).filter(w -> w.hasKey("highway") && w.hasKey("maxspeed")).toList();
+            
+            if(ways.size() == 1) {
+              maxspeed.setText(ways.get(0).get("maxspeed"));
+            }
+            
+            DefaultListModel<NamedObject<String>> model = new DefaultListModel<>();
+            model.addElement(new NamedObject<String>(tr("toll"),"toll"));
+            model.addElement(new NamedObject<String>(tr("maxspeed"), "maxspeed"));
+            
+            JList<NamedObject<String>> list = new JList<>(model);
+            list.setSelectedIndex(0);
+            list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            list.getSelectionModel().addListSelectionListener(sl -> {
+              if(!sl.getValueIsAdjusting()) {
+                maxspeedPanel.setVisible(list.getSelectedIndex() == 1);
+                ((JDialog)maxspeedPanel.getRootPane().getParent()).pack();
+              }
+            });
+            
+            String[] options = {tr("OK"),tr("Cancel"), tr("Other realtion type")};
+            int result = JOptionPane.showOptionDialog(MainApplication.getMainFrame(), new Object[] {list, maxspeedPanel}, tr("Select enforcement type"), JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE, null, options, options[0]);
+            
+            if(JOptionPane.YES_OPTION == result) {
+              String value = list.getSelectedValue().getObject();
+              temp.put("enforcement", value);
+              
+              if(Objects.equals("maxspeed", value) && (maxspeed.getText().strip().matches("\\d+") || maxspeed.getText().strip().equals("walk"))) {
+                temp.put("maxspeed", maxspeed.getText().strip());
+              }
+              
+              UndoRedoHandler.getInstance().add(new SequenceCommand("add relation", List.of(new AddCommand(OsmDataManager.getInstance().getActiveDataSet(), temp), new SelectCommand(OsmDataManager.getInstance().getActiveDataSet(), selection))));
+              
+              return;
+            }
+            else if(JOptionPane.CANCEL_OPTION != result) {
+              return;
+            }
+          }
+        }
+        
         for(OsmPrimitive p : selection) {
           String role = "";
           
@@ -2515,14 +2602,132 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
   }
   
-  class FixSplitMultipolygonAction extends JosmAction {
-    public FixSplitMultipolygonAction() {
-      super(tr("Fix/split multipolygon"), /* ICON() */ "multipoly_update.svg", tr("Fix/split multipolygon"),
-          Shortcut.registerShortcut("kindahackedinutils.fixSplitMultipolygon", tr("Fix/split multipolygon"), KeyEvent.VK_X,
+  class OptimizeSplitMultipolygonAction extends JosmAction {
+    public OptimizeSplitMultipolygonAction() {
+      super(tr("Optimize/split multipolygon"), /* ICON() */ "multipoly_update.svg", tr("Optimize/split multipolygon"),
+          Shortcut.registerShortcut("kindahackedinutils.fixSplitMultipolygon", tr("Optimize/split multipolygon"), KeyEvent.VK_X,
                   Shortcut.ALT_SHIFT), false);
     }
     
-    private void doFixMultipolygone(DataSet ds, Relation r) {
+    private Way findWayFromNode(DataSet ds, Relation r, Node end, Way original) {
+      List<Way> ways = end.referrers(Way.class).filter(w -> {
+        boolean result = false;
+        
+        if(w != original) {
+          for(int k = 0; k < r.getMembersCount(); k++) {
+            RelationMember m1 = r.getMember(k);
+            
+            if(m1.hasRole("outer") && m1.isWay() && !m1.getWay().isClosed() && m1.getWay() != original && m1.getWay() == w) {
+              result = true;
+              break;
+            }
+          }
+        }
+        return result;
+      }).toList();
+      
+      if(ways.size() == 1) {
+        return ways.get(0);
+      }
+      
+      return null;
+    }
+    
+    private boolean prepareMultipolygon(DataSet ds, Relation r) {
+      List<RelationMember> membersList = new LinkedList<>();
+      List<Way> newOuterWaysList = new LinkedList<>();
+      List<Way> handledWaysList = new LinkedList<>();
+      
+      List<Command> cmds = new LinkedList<>();
+      
+      for(int i = 0; i < r.getMembersCount(); i++) {
+        RelationMember m = r.getMember(i);
+        
+        if(m.hasRole("outer") && m.isWay() && !m.getWay().isClosed() && !newOuterWaysList.contains(m.getWay()) && !handledWaysList.contains(m.getWay())) {
+          final Way way = m.getWay();
+          
+          List<Node> nodeList = new LinkedList<>();
+          nodeList.addAll(way.getNodes());
+          
+          Node end = way.getNode(m.getWay().getRealNodesCount()-1);
+          Way next = way;
+          
+          while((next = findWayFromNode(ds, r, end, next)) != null && next != way) {
+            if(next.getNode(0) == end) {
+              end = next.getNode(next.getRealNodesCount()-1);
+              for(int k = 1; k < next.getRealNodesCount(); k++) {
+                if(!nodeList.contains(next.getNode(k))) {
+                  nodeList.add(next.getNode(k));
+                }
+              }
+            }
+            else {
+              end = next.getNode(0);
+              
+              for(int k = next.getRealNodesCount()-2; k >= 0; k--) {
+                if(!nodeList.contains(next.getNode(k))) {
+                  nodeList.add(next.getNode(k));
+                }
+              }
+            }
+            
+            handledWaysList.add(next);
+          };
+          
+          if(next == null) {
+            return false;
+          }
+          nodeList.add(nodeList.get(0));
+          
+          if(way.getReferrers().size() != 1) {
+            Way newWay = new Way();
+            newWay.setNodes(nodeList);
+            cmds.add(new AddCommand(ds, newWay));
+            newOuterWaysList.add(newWay);
+            handledWaysList.add(way);
+          }
+          else {
+            newOuterWaysList.add(way);
+            cmds.add(new ChangeNodesCommand(way, nodeList));
+          }
+        }
+        else if(!m.hasRole("outer") || !m.isWay() || (m.isWay() && m.getWay().isClosed())) {
+          membersList.add(m);
+        }
+      }
+      
+      if(!newOuterWaysList.isEmpty()) {
+        for(Way w : newOuterWaysList) {
+          membersList.add(new RelationMember("outer", w));
+        }
+        
+        cmds.add(new ChangeMembersCommand(r, membersList));
+        
+        for(Way w : handledWaysList) {
+          if((w.getReferrers().size() == 0 || (w.getReferrers().size() == 1 && w.referrers(Relation.class).filter(p -> p == r).count() == 1)) && !w.hasKeys()) {
+            UndoRedoHandler.getInstance().add(new DeleteCommand(w));
+          }
+        }
+        
+        UndoRedoHandler.getInstance().add(new SequenceCommand("Change members", cmds));
+      }
+      
+      return false;
+    }
+    
+    private void doOptimizeMultipolygon(DataSet ds, Relation r) {
+      if(r.getMembers().stream().anyMatch(m -> m.getMember().isIncomplete())) {
+        JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Please download missing members first."));
+        return;
+      }
+      
+      if(r.getMembers().stream().anyMatch(m -> m.getMember().isOutsideDownloadArea())) {
+        JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Relation not completely in download area.\nPlease download complete area of relation."));
+        return;
+      }
+      
+      prepareMultipolygon(ds, r);
+      
       List<Way> outerWays = new LinkedList<>();
       List<OsmPrimitive> inner = new LinkedList<>();
       HashMap<Way, List<OsmPrimitive>> resultMap = new HashMap<>();
@@ -2582,6 +2787,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       
       boolean realtionFound = false;
       
+      List<OsmPrimitive> toSelect = new LinkedList<>();
+      
       for(int i = 0; i < outerWays.size(); i++) {
         List<OsmPrimitive> list = resultMap.get(outerWays.get(i));
         
@@ -2603,6 +2810,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             r1.setMembers(in);
             r.getKeys().forEach((key,value) -> r1.put(key, value));
             cmds.add(new AddCommand(ds, r1));
+            toSelect.add(r1);
           }
         }
         else {
@@ -2612,25 +2820,31 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               cmds.add(new ChangePropertyCommand(w, key, value));
             }
           });
+          toSelect.add(w);
         }
       }
       
       if(!realtionFound) {
         cmds.add(new DeleteCommand(ds, r));
       }
+      else {
+        toSelect.add(r);
+      }
       
       if(!cmds.isEmpty()) {
+        cmds.add(new SelectCommand(ds, toSelect));
+        
         UndoRedoHandler.getInstance().add(new SequenceCommand("fix multipolygone", cmds));
       }
     }
     
     @Override
     public void actionPerformed(ActionEvent e) {
-      if(Conf.isFixSplitMultipolygonEnabled()) {
+      if(Conf.isOptimizeSplitMultipolygonEnabled()) {
         DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
         
         if(ds.getSelectedRelations().size() == 1) {
-          doFixMultipolygone(ds, ds.getSelectedRelations().stream().toList().get(0));
+          doOptimizeMultipolygon(ds, ds.getSelectedRelations().stream().toList().get(0));
         }
         else if(splitObjectAction != null) {
           splitObjectAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, "Split object"));
@@ -2639,7 +2853,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             List<Relation> r = ds.getSelectedWays().stream().findFirst().get().referrers(Relation.class).toList();
             
             if(r.size() == 1 && ds.getSelectedWays().stream().filter(p -> p.referrers(Relation.class).allMatch(p1 -> r.get(0) == p1)).count() == 2) {
-              doFixMultipolygone(ds, r.get(0));
+              doOptimizeMultipolygon(ds, r.get(0));
             }
           }
         }
@@ -2657,7 +2871,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             setEnabled(false);
             return;
         }
-        setEnabled(Conf.isFixSplitMultipolygonEnabled() && checkSelection(selection));
+        setEnabled(Conf.isOptimizeSplitMultipolygonEnabled() && checkSelection(selection));
     }
     
     private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
@@ -4252,6 +4466,25 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       super.setEnabled(value);
       button.setEnabled(value);
       label.setEnabled(value);
+    }
+  }
+  
+  private static final class NamedObject<T> {
+    private String name;
+    private T o;
+    
+    public NamedObject(String name, T o) {
+      this.name = name;
+      this.o = o;
+    }
+    
+    public T getObject() {
+      return o;
+    }
+
+    @Override
+    public String toString() {
+      return name;
     }
   }
 }
