@@ -973,8 +973,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   
   class AddToRelationAction extends JosmAction {
     public AddToRelationAction() {
-      super(tr("Add selected objects to selected relation"), /* ICON() */ "relation-add", tr("Adds selected objects to selected relation"),
-          Shortcut.registerShortcut("kindahackedinutils.relation-add", tr("Add selected objects to selected relation"), KeyEvent.VK_R, Shortcut.CTRL), false);
+      super(tr("Add selected objects to relation"), /* ICON() */ "relation-add", tr("Adds selected objects to selected/matching relation or creates new relation"),
+          Shortcut.registerShortcut("kindahackedinutils.relation-add", tr("Add selected objects to relation"), KeyEvent.VK_R, Shortcut.CTRL), false);
     }
     
     private void handleSelection(List<OsmPrimitive> selection, boolean ignoreDoublets, boolean addDoublets) {
@@ -1010,6 +1010,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       }
     }
     
+    private boolean isAcceptableNodeCount(long count) {
+      return count >= 2 && count <= 3;
+    }
+    
     @Override
     public void actionPerformed(ActionEvent e) {
       List<OsmPrimitive> selection = MainApplication.getLayerManager().getEditDataSet().getSelected().stream().toList();
@@ -1021,37 +1025,51 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         Relation r = new Relation();
         String publicTansportType = null;
         
-        if(selection.size() == 3 && selection.stream().filter(p -> p instanceof Node).count() == 3) {
+        if((selection.size() == 3 && isAcceptableNodeCount(selection.stream().filter(p -> p instanceof Node).count())) || 
+            (selection.size() == 2 && selection.stream().filter(p -> p instanceof Node && p.referrers(Way.class).filter(w -> w.hasKey("highway")).count() > 0).count() == 2)) {
           Relation temp = new Relation();
           
-          Node device = null;
-          Node n1 = null;
-          Node n2 = null;
+          OsmPrimitive device = null;
+          OsmPrimitive n1 = null;
+          OsmPrimitive n2 = null;
+          OsmPrimitive n3 = null;
           
-          for(OsmPrimitive p : selection) {
-            if(p.referrers(Way.class).count() == 0) {
-              device = (Node)p;
+          if(selection.size() == 2) {
+            device = selection.get(1);
+            n1 = selection.get(0);
+          }
+          else {
+            for(OsmPrimitive p : selection) {
+              if(p.referrers(Way.class).count() == 0) {
+                device = p;
+              }
+              else if(n1 == null) {
+                n1 = p;
+              }
+              else if(n2 == null) {
+                n2 = p;
+              }
+              else if(n3 == null) {
+                n3 = p;
+              }
             }
-            else if(n1 == null) {
-              n1 = (Node)p;
-            }
-            else {
-              n2 = (Node)p;
+            
+            if(device == null) {
+              if(n3 != null) {
+                device = n3;
+              }
+              else if(n2 != null) {
+                device = n2;
+              }
             }
           }
           
-          if(device != null && n1 != null && n2 != null) {
+          if(device != null && n1 != null && n1 instanceof Node && (n2 == null || n2 instanceof Node)) {
             temp.addMember(new RelationMember("device", device));
+            temp.addMember(new RelationMember("from", n1));
             
-            Node from = null;
-            
-            if(n1.distanceSq(device) > n2.distanceSq(device)) {
-              temp.addMember(new RelationMember("from", from = n1));
+            if(n2 != null) {
               temp.addMember(new RelationMember("to", n2));
-            }
-            else {
-              temp.addMember(new RelationMember("from", from = n2));
-              temp.addMember(new RelationMember("to", n1));              
             }
             
             temp.put("type", "enforcement");
@@ -1065,7 +1083,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             maxspeedPanel.add(maxspeed);
             maxspeedPanel.setVisible(false);
             
-            List<Way> ways = from.referrers(Way.class).filter(w -> w.hasKey("highway") && w.hasKey("maxspeed")).toList();
+            List<Way> ways = n1.referrers(Way.class).filter(w -> w.hasKey("highway") && w.hasKey("maxspeed")).toList();
             
             if(ways.size() == 1) {
               maxspeed.setText(ways.get(0).get("maxspeed"));
@@ -1073,6 +1091,11 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             
             DefaultListModel<NamedObject<String>> model = new DefaultListModel<>();
             model.addElement(new NamedObject<String>(tr("toll"),"toll"));
+            
+            if(device.hasTag("highway","traffic_signals")) {
+              model.addElement(new NamedObject<String>(tr("traffic_signals"), "traffic_signals"));
+            }            
+            
             model.addElement(new NamedObject<String>(tr("maxspeed"), "maxspeed"));
             
             JList<NamedObject<String>> list = new JList<>(model);
@@ -1080,10 +1103,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             list.getSelectionModel().addListSelectionListener(sl -> {
               if(!sl.getValueIsAdjusting()) {
-                maxspeedPanel.setVisible(list.getSelectedIndex() == 1);
+                maxspeedPanel.setVisible(Objects.equals("maxspeed", list.getSelectedValue().o));
                 ((JDialog)maxspeedPanel.getRootPane().getParent()).pack();
               }
             });
+            
+            if(device.hasTag("highway","traffic_signals")) {
+              list.setSelectedIndex(1);
+            }
             
             String[] options = {tr("OK"),tr("Cancel"), tr("Other realtion type")};
             int result = JOptionPane.showOptionDialog(MainApplication.getMainFrame(), new Object[] {list, maxspeedPanel}, tr("Select enforcement type"), JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE, null, options, options[0]);
@@ -2929,7 +2956,6 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     @Override
     public void destroy() {
-      System.out.println("destroy");
       super.destroy();
     }
     
