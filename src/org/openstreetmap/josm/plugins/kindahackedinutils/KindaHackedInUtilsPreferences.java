@@ -32,6 +32,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   private JCheckBox detachEnabled;
   private JCheckBox wrapAroundEnabled;
   private JCheckBox createAreaEnabled;
+  private JCheckBox handlePresetToolbarActionsEnabledState;
   
   public KindaHackedInUtilsPreferences() {
     super("detach", "KindaHackedInUtils", tr("Change settings for KindaHackedInUtils plugin."));
@@ -52,6 +53,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     wrapAroundEnabled = new JCheckBox(tr("Wrap way around other way with keybord keys Shift+F"), Conf.isWrapAroundEnabled());
     createAreaEnabled = new JCheckBox(tr("Create area between 2 points of a line with keyboard keys Alt+Ctrl+Shift+A"), Conf.isCreateAreaEnabled());
     optimizeSplitMultipolygon = new JCheckBox(tr("Optimize/split multipolygon wiht keyboard keys Alt+Shift+X"), Conf.isOptimizeSplitMultipolygonEnabled());
+    handlePresetToolbarActionsEnabledState = new JCheckBox(tr("Enabled/Disable preset actions in toolbar dependend on selection"), Conf.isHandlePresetToolbarActionsEnabledStateEnabled());
     
     toFront = new JCheckBox(tr("Get JOSM to front whenever mouse enters map view or dialog window (might not work depending on OS and window manager)"), Conf.isToFront());
     
@@ -101,6 +103,8 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     gc.gridy++;
     p.add(optimizeSplitMultipolygon, gc);
     gc.gridy++;
+    p.add(handlePresetToolbarActionsEnabledState, gc);
+    gc.gridy++;
     p.add(directionEnabled, gc);
     gc.gridy++;
     
@@ -145,6 +149,10 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     Conf.setValue(Conf.CREATE_AREA_ENABLED, createAreaEnabled.isSelected());
     Conf.setValue(Conf.WRAP_AROUND_ENABLED, wrapAroundEnabled.isSelected());
     Conf.setValue(Conf.OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED, optimizeSplitMultipolygon.isSelected());
+    Conf.setValue(Conf.HANDLE_PRESET_TOOLBAR_ACTIONS_ENABLED_STATE, handlePresetToolbarActionsEnabledState.isSelected());
+    
+    KindaHackedInUtilsPlugin.updateToolbarPresetButtonsEnabledState(!handlePresetToolbarActionsEnabledState.isSelected());
+    
     return false;
   }
 

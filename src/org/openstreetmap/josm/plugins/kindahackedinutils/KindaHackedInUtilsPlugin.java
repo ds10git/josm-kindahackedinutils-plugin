@@ -73,6 +73,7 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
+import javax.swing.JToolBar;
 import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
@@ -158,6 +159,7 @@ import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompletionManager;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetMenu;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.gui.util.GuiHelper;
@@ -399,6 +401,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       if(e.getSelection().size() == 1) {
         changeDirectionForTrafficSign(MainApplication.getLayerManager().getActiveDataSet().getSelected(), false, null, Conf.isObjectSpecificDirection(), Conf.isAutoSetEnabled());
       }
+      
+      updateToolbarPresetButtonsEnabledState(false);
     };
     
     JMenu toolsMenu = MainApplication.getMenu().moreToolsMenu;
@@ -516,6 +520,84 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     return splitMode != null;
   }
   
+  private static boolean handleTaggingPresetEnabledState(TaggingPreset preset, Set<TaggingPresetType> types) {
+    boolean matches = types == null;
+    
+    if(!matches) {
+      for(TaggingPresetType t : types) {
+        if(preset.types == null || preset.types.contains(t)) {
+          matches = true;
+          break;
+        }
+      }
+    }
+    
+    return matches;
+  }
+  
+  private static boolean handleTaggingPresetMenuEnabledState(JMenu menu, Set<TaggingPresetType> types) {
+    boolean result = false;
+    
+    if(menu != null) {
+      result = false;
+      
+      for(int i = 0; i < menu.getMenuComponentCount(); i++) {
+        if(menu.getMenuComponent(i) instanceof JMenuItem) {
+          JMenuItem item = (JMenuItem)menu.getMenuComponent(i);
+          
+          if(item.getAction() instanceof TaggingPresetMenu) {
+            item.getAction().setEnabled(handleTaggingPresetMenuEnabledState(((TaggingPresetMenu)item.getAction()).menu, types));
+            result |= item.isEnabled();            
+          }
+          else if(item.getAction() instanceof TaggingPreset) {
+            item.getAction().setEnabled(handleTaggingPresetEnabledState((TaggingPreset)item.getAction(), types));
+            
+            result |= item.isEnabled();
+          }
+        }
+      }
+    }
+    
+    return result;
+  }
+  
+  static void updateToolbarPresetButtonsEnabledState(boolean enableActions) {
+    DataSet editDataSet = OsmDataManager.getInstance().getActiveDataSet();
+    
+    if(MainApplication.getToolbar() != null && editDataSet != null && (enableActions || Conf.isHandlePresetToolbarActionsEnabledStateEnabled())) {
+      Set<TaggingPresetType> types = enableActions ? null : new HashSet<>();
+      
+      if(types != null) {
+        if(editDataSet.getSelected().stream().filter(p -> p instanceof Node).count() > 0) {
+          types.add(TaggingPresetType.NODE);
+        }
+        if(editDataSet.getSelected().stream().filter(p -> p instanceof Way && !((Way)p).isClosed()).count() > 0) {
+          types.add(TaggingPresetType.WAY);
+        }
+        if(editDataSet.getSelected().stream().filter(p -> p instanceof Way && ((Way)p).isClosed()).count() > 0) {
+          types.add(TaggingPresetType.CLOSEDWAY);
+        }
+        if(editDataSet.getSelected().stream().filter(p -> p instanceof Relation && !((Relation)p).isMultipolygon()).count() > 0) {
+          types.add(TaggingPresetType.RELATION);
+        }
+        if(editDataSet.getSelected().stream().filter(p -> p instanceof Relation && ((Relation)p).isMultipolygon()).count() > 0) {
+          types.add(TaggingPresetType.MULTIPOLYGON);
+        }
+      }
+      
+      JToolBar bar = MainApplication.getToolbar().control;
+      
+      for(int i = 0; i < bar.getComponentCount(); i++) {
+        if(bar.getComponent(i) instanceof AbstractButton && ((AbstractButton)bar.getComponent(i)).getAction() instanceof TaggingPresetMenu) {
+          ((AbstractButton)bar.getComponent(i)).getAction().setEnabled(handleTaggingPresetMenuEnabledState(((TaggingPresetMenu)((AbstractButton)bar.getComponent(i)).getAction()).menu, types));
+        }
+        else if(bar.getComponent(i) instanceof AbstractButton && ((AbstractButton)bar.getComponent(i)).getAction() instanceof TaggingPreset) {
+          ((AbstractButton)bar.getComponent(i)).getAction().setEnabled(handleTaggingPresetEnabledState((TaggingPreset)((AbstractButton)bar.getComponent(i)).getAction(), types));
+        }
+      }
+    }
+  }
+  
   private static String getDirectionFromHeading(int test) {
     String angle = String.valueOf(test);
     
@@ -619,6 +701,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             if(editDataSet == null || editDataSet != MainApplication.getLayerManager().getEditDataSet()) {
               editDataSet = MainApplication.getLayerManager().getEditDataSet();
               editDataSet.addDataSetListener(listener);
+              updateToolbarPresetButtonsEnabledState(false);
               
               if(activeData == null || activeData != MainApplication.getLayerManager().getActiveData()) {
                 activeData = MainApplication.getLayerManager().getActiveData();
@@ -1104,7 +1187,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             list.getSelectionModel().addListSelectionListener(sl -> {
               if(!sl.getValueIsAdjusting()) {
                 maxspeedPanel.setVisible(Objects.equals("maxspeed", list.getSelectedValue().o));
-                ((JDialog)maxspeedPanel.getRootPane().getParent()).pack();
+                
+                if(maxspeedPanel.getRootPane() != null) {
+                  ((JDialog)maxspeedPanel.getRootPane().getParent()).pack();
+                }
               }
             });
             
@@ -3869,7 +3955,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     private Tag result;
     
     public TypeSelectionDialog() {
-      super(MainApplication.getMainFrame(), tr("Select type of area"), new String[] {tr("Ok"),tr("Cancel")}, true, true);
+      super(MainApplication.getMainFrame(), tr("Select type of area"), new String[] {tr("OK"),tr("Cancel")}, true, true);
       autocomplete = AutoCompletionManager.of(OsmDataManager.getInstance().getActiveDataSet());
       setRememberWindowGeometry(getClass().getName() + ".geometry",
           WindowGeometry.centerInWindow(MainApplication.getMainFrame(), new Dimension(350, 350)));

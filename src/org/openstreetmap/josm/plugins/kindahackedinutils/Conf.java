@@ -23,6 +23,8 @@ public class Conf {
   static final String WRAP_AROUND_ENABLED = "kindahackedinutils.wrapAroundEnabled";
   static final String CREATE_AREA_ENABLED = "kindahackedinutils.createAreaEnabled";
   
+  static final String HANDLE_PRESET_TOOLBAR_ACTIONS_ENABLED_STATE = "kindahackedinutils.handlePresetToolbarActionsEnabledState";
+  
   static final String TO_FRONT = "kindahackedinutils.toFront";
 
   static void setValue(String key, boolean value) {
@@ -99,6 +101,10 @@ public class Conf {
   
   public static boolean isCreateAreaEnabled() {
     return Config.getPref().getBoolean(CREATE_AREA_ENABLED, true);
+  }
+  
+  public static boolean isHandlePresetToolbarActionsEnabledStateEnabled() {
+    return Config.getPref().getBoolean(HANDLE_PRESET_TOOLBAR_ACTIONS_ENABLED_STATE, true);
   }
 }
 
