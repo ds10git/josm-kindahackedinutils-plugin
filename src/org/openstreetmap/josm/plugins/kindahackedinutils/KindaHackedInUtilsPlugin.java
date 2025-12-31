@@ -669,18 +669,16 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     if(splitObjectAction == null) { 
       findSplitObject(MainApplication.getMenu().moreToolsMenu);
     }
-        
-    if (oldFrame == null && newFrame != null) {
-      dialog = new QuickRelationSelectionListDialog();
-      newFrame.addToggleDialog(dialog);
-    } else if (oldFrame != null && newFrame == null) {
-      dialog = null;
-    }
-    
+     
     if(oldFrame != null) {
       oldFrame.getActionMap().remove("kindahackedinutils.addHeading");
-    }   
-    if(newFrame != null) {
+      oldFrame.removeToggleDialog(dialog);
+      dialog = null;
+    }  
+    
+    if (newFrame != null) {
+      dialog = new QuickRelationSelectionListDialog();
+      newFrame.addToggleDialog(dialog);
       newFrame.getActionMap().put("kindahackedinutils.addHeading", angleAction);
       
       MainApplication.getLayerManager().addActiveLayerChangeListener(new ActiveLayerChangeListener() {
@@ -1108,8 +1106,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         Relation r = new Relation();
         String publicTansportType = null;
         
-        if((selection.size() == 3 && isAcceptableNodeCount(selection.stream().filter(p -> p instanceof Node).count())) || 
-            (selection.size() == 2 && selection.stream().filter(p -> p instanceof Node && p.referrers(Way.class).filter(w -> w.hasKey("highway")).count() > 0).count() == 2)) {
+        if(selection.stream().filter(p -> p.hasKey("public_transport")).count() == 0 && ((selection.size() == 3 && isAcceptableNodeCount(selection.stream().filter(p -> p instanceof Node).count())) || 
+            (selection.size() == 2 && selection.stream().filter(p -> p instanceof Node && p.referrers(Way.class).filter(w -> w.hasKey("highway")).count() > 0).count() == 2))) {
           Relation temp = new Relation();
           
           OsmPrimitive device = null;
@@ -1219,6 +1217,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           }
         }
         
+        final AtomicReference<String> name = new AtomicReference<>();
+        Set<OsmPrimitive> noName = new HashSet<>();
+        
         for(OsmPrimitive p : selection) {
           String role = "";
           
@@ -1248,16 +1249,32 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               role = "stop";
             }
             
-            if(!r.hasKey("name") && (Objects.equals(role, "stop") || Objects.equals(role, "platform"))) {
-              String name = p.get("name");
-              
-              if(name != null) {
-                r.put("name", name);
+            if(Objects.equals(role, "stop") || Objects.equals(role, "platform")) {
+              if(p.hasKey("name")) {
+                if(name.get() == null) {
+                  name.set(p.get("name"));
+                  noName.forEach(pr -> pr.put("name", name.get()));
+                  noName.clear();
+                  
+                  if(!r.hasKey("name")) { 
+                    r.put("name", name.get());
+                  }
+                }
+              }
+              else if(name.get() != null) {
+                p.put("name", name.get());
+              }
+              else {
+                noName.add(p);
               }
             }
           }
           
           r.addMember(new RelationMember(role, p));
+        }
+        
+        if(name.get() != null) {
+          noName.forEach(pr -> pr.put("name", name.get()));
         }
         
         if(publicTansportType != null) {

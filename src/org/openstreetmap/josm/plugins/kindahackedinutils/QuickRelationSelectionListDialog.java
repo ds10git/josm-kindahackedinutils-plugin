@@ -92,6 +92,12 @@ public class QuickRelationSelectionListDialog extends ToggleDialog implements Da
   private SideButton deleteBtn = new SideButton(delete, false);
   private final AtomicInteger lastIndex = new AtomicInteger(-1);
   
+  @Override
+  public void destroy() {
+  	System.out.println("DESTROY ");
+  	super.destroy();
+  }
+  
   public QuickRelationSelectionListDialog() {
     super(tr("Quick Relation Selection List"), "relations", tr("Quickly select relations for which selected object is a memember of."),
         Shortcut.registerShortcut("QuickRelationSelectionListDialog.listOpen", tr("Windows: {0}", tr("Quick Relation Selection List")),
