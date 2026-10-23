@@ -30,6 +30,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   private JCheckBox splitWays;
   private JCheckBox createNode;
   private JCheckBox detachEnabled;
+  private JCheckBox clearRoadAreaEnabled;
   private JCheckBox wrapAroundEnabled;
   private JCheckBox createAreaEnabled;
   private JCheckBox handlePresetToolbarActionsEnabledState;
@@ -50,6 +51,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     splitWays = new JCheckBox(tr("Split ways at mouse location with keyboard key K"), Conf.isSplitWay());
     createNode = new JCheckBox(tr("Create new node at mouse location with keyboard key B"), Conf.isCreateNode());
     detachEnabled = new JCheckBox(tr("Detach nodes from ways and move them with keyboard key Z"), Conf.isDetachEnabled());
+    clearRoadAreaEnabled = new JCheckBox(tr("Clear road area from surrounding area with keyboard keys ALT+L"), Conf.isClearRoadAreEnabled());
     wrapAroundEnabled = new JCheckBox(tr("Wrap way around other way with keybord keys Shift+F"), Conf.isWrapAroundEnabled());
     createAreaEnabled = new JCheckBox(tr("Create area between 2 points of a line with keyboard keys Alt+Ctrl+Shift+A"), Conf.isCreateAreaEnabled());
     optimizeSplitMultipolygon = new JCheckBox(tr("Optimize/split multipolygon wiht keyboard keys Alt+Shift+X"), Conf.isOptimizeSplitMultipolygonEnabled());
@@ -89,13 +91,14 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
     
     p.add(toFront, GBC.std().fill(GBC.HORIZONTAL));
     p.add(detachEnabled, GBC.std(0, 2));
-    p.add(createNode, GBC.std(0, 3));
+    p.add(clearRoadAreaEnabled, GBC.std(0, 3));
+    p.add(createNode, GBC.std(0, 4));
     
     if(KindaHackedInUtilsPlugin.getInstance().hasSplitMode()) {
-      p.add(splitWays, GBC.std(0, 4));
+      p.add(splitWays, GBC.std(0, 5));
     }
     
-    GBC gc = GBC.std(0, 6);
+    GBC gc = GBC.std(0, 7);
     
     p.add(createAreaEnabled, gc);
     gc.gridy++;
@@ -135,6 +138,7 @@ public class KindaHackedInUtilsPreferences extends DefaultTabPreferenceSetting {
   public boolean ok() {
     Conf.setValue(Conf.TO_FRONT, toFront.isSelected());
     Conf.setValue(Conf.DETACH_ENABLED, detachEnabled.isSelected());
+    Conf.setValue(Conf.CLEAR_ROAD_AREA_ENABLED, clearRoadAreaEnabled.isSelected());
     Conf.setValue(Conf.CREATE_NODE, createNode.isSelected());
     Conf.setValue(Conf.SPLIT_WAY, splitWays.isSelected());
     Conf.setValue(Conf.DIRECTION_ENABLED, directionEnabled.isSelected());

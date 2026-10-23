@@ -16,9 +16,12 @@ public class Conf {
   static final String DIRECTION_HELPER_CONE_ENABLED = "kindahackedinutils.directionHelperConeEnabled";
   static final String DIRECTION_ARROW_FOR_SIMPLE_DIRECTION = "kindahackedinutils.directionArrowForSimpleDirection";
   
+  static final String DETACH_LENGTH = "kindahackedinutils.detachLength";
+  
   static final String CREATE_NODE = "kindahackedinutils.createNode";
   static final String SPLIT_WAY = "kindahackedinutils.splitWay";
   static final String DETACH_ENABLED = "kindahackedinutils.detachEnabled";
+  static final String CLEAR_ROAD_AREA_ENABLED = "kindahackedinutils.clearRoadAreaEnabled";
   static final String OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED = "kindahackedinutils.fixSplitMultipolygon";
   static final String WRAP_AROUND_ENABLED = "kindahackedinutils.wrapAroundEnabled";
   static final String CREATE_AREA_ENABLED = "kindahackedinutils.createAreaEnabled";
@@ -29,6 +32,14 @@ public class Conf {
 
   static void setValue(String key, boolean value) {
     Config.getPref().putBoolean(key, value);
+  }
+ 
+  static void setValue(String key, double value) {
+    Config.getPref().putDouble(key, value);
+  }
+ 
+  public static double getDetachLength() {
+    return Config.getPref().getDouble(DETACH_LENGTH, 12);
   }
   
   public static boolean isDirectionEnabled() {
@@ -74,7 +85,11 @@ public class Conf {
   public static boolean isDetachEnabled() {
     return Config.getPref().getBoolean(DETACH_ENABLED, true);
   }
-  
+
+  public static boolean isClearRoadAreEnabled() {
+    return Config.getPref().getBoolean(CLEAR_ROAD_AREA_ENABLED, true);
+  }
+
   public static boolean isAutoSetEnabled() {
     return Config.getPref().getBoolean(DIRECTION_AUTO_SET, true);
   }

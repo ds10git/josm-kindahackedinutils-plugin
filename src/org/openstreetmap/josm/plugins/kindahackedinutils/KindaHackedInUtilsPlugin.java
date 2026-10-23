@@ -223,7 +223,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private JosmAction balloonAction;
   private JosmAction splitObjectAction;
   private final CloseWayAction closeWays;
+  private final WrapAroundAction wrapAroundWay;
+  private final DetachAction detachAction;
   private PreferenceChangedListener prefFixSplitListener;
+  private PreferenceChangedListener prefClearRoadAreaListener;
   
   private ChangeListener cl = new ChangeListener() {
     private OsmPrimitveMenuItem lastItem;
@@ -257,12 +260,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     angleAction = new AngleAction();
     addToRelation = new AddToRelationAction();
     
-    DetachAction detachAction = new DetachAction();
+    detachAction = new DetachAction();
+    DetachLengthAction detachLengthAction = new DetachLengthAction();
+    ClearRoadAreaAction clearRoadAreaAction = new ClearRoadAreaAction();
     TurnRestrictionAction turnRestrictionAction = new TurnRestrictionAction();
     CreateAreaAction closedLineAction = new CreateAreaAction();
     UndoRedoSelectedAction undo = new UndoRedoSelectedAction();
     OptimizeSplitMultipolygonAction optimizeMultipolygon = new OptimizeSplitMultipolygonAction();
-    WrapAroundAction wrapAroundWay = new WrapAroundAction();
+    wrapAroundWay = new WrapAroundAction();
     closeWays = new CloseWayAction();
     
     arrow = ImageProvider.get("N", ImageSizes.POPUPMENU);
@@ -407,6 +412,27 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     JMenu toolsMenu = MainApplication.getMenu().moreToolsMenu;
     MainMenu.add(toolsMenu, detachAction);
+    MainMenu.add(MainApplication.getMenu().dataMenu, detachLengthAction);
+    
+    if(Conf.isClearRoadAreEnabled()) {
+      MainMenu.add(toolsMenu, clearRoadAreaAction);
+    }
+    else {
+      prefClearRoadAreaListener = new PreferenceChangedListener() {
+        @Override
+        public void preferenceChanged(PreferenceChangeEvent e) {
+          if(Conf.isClearRoadAreEnabled()) {
+            prefClearRoadAreaListener = null;
+            MainMenu.add(toolsMenu, clearRoadAreaAction);
+            clearRoadAreaAction.updateEnabledState();
+            Config.getPref().removeKeyPreferenceChangeListener(Conf.CLEAR_ROAD_AREA_ENABLED, this);
+          }
+        }
+      };
+      
+      Config.getPref().addKeyPreferenceChangeListener(Conf.CLEAR_ROAD_AREA_ENABLED, prefClearRoadAreaListener);
+    }
+    
     MainMenu.add(toolsMenu, turnRestrictionAction);
     MainMenu.add(toolsMenu, undo);
     MainMenu.add(toolsMenu, addToRelation);
@@ -486,6 +512,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           if(prefFixSplitListener != null) {
             Config.getPref().removeKeyPreferenceChangeListener(Conf.OPTIMIZE_SPLIT_MULTIPOLYGON_ENABLED, prefFixSplitListener);
             prefFixSplitListener = null;
+          }
+          if(prefClearRoadAreaListener != null) {
+            Config.getPref().removeKeyPreferenceChangeListener(Conf.CLEAR_ROAD_AREA_ENABLED, prefFixSplitListener);
+            prefClearRoadAreaListener = null;
           }
           
           MapFrame map = MainApplication.getMap();
@@ -1317,26 +1347,233 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
   }
   
+  class ClearRoadAreaAction extends JosmAction {
+    public ClearRoadAreaAction() {
+      super(tr("Clear road from surrounding area"), /* ICON() */ "clearroadarea", tr("Clear road from surrounding area"),
+          Shortcut.registerShortcut("kindahackedinutils.clearroadarea", tr("Clear road area"), KeyEvent.VK_L, Shortcut.ALT), false);
+    }
+    
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      if(splitObjectAction == null || !Conf.isClearRoadAreEnabled()) {
+        return;
+      }
+      
+      DataSet ds = MainApplication.getLayerManager().getEditDataSet();
+      Collection<Node> nodes = ds.getSelectedNodes();
+      
+      Node n1 = null;
+      Node n2 = null;
+      WayExt w = null;
+      List<Way> closedWays = null;
+      Way detachLength = null;
+      
+      if(ds.getSelectedWays().size() == 1) {
+        detachLength = ds.getSelectedWays().stream().findAny().get();
+      }
+      
+      for(Node n : nodes) {
+        if(n1 == null) {
+          n1 = n;
+        }
+        else {
+          n2 = n;
+        }
+      }
+      
+      if(n1 != null && n2 != null) {
+        Node test = n2;
+        
+        Optional<Way> ow = n1.referrers(Way.class).filter(way -> way.containsNode(test) && way.hasKey("highway")).findAny();
+        closedWays = n1.referrers(Way.class).filter(way -> way.isClosed()).toList();
+        
+        if(ow.isPresent()) {
+          w = new WayExt(ow.get());
+        }
+      }
+      
+      if(closedWays != null && !closedWays.isEmpty()) {
+        for(Way way : closedWays) {
+          if(way.containsNode(n1) && way.containsNode(n2)) {
+            ds.addSelected(way);
+            break;
+          }
+        }
+        
+        splitObjectAction.actionPerformed(new ActionEvent(MainApplication.getMap().mapView, 0, "Split object"));
+        
+        Collection<Way> splitWays = ds.getSelectedWays();
+        
+        if(splitWays.size() == 2) {
+          WayExt w1 = null;
+          WayExt w2 = null;
+          
+          for(Way way : splitWays) {
+            if(w1 == null) {
+              w1 = new WayExt(way);
+            }
+            else {
+              w2 = new WayExt(way);
+            }
+          }
+          ds.clearSelection();
+          
+          int i1 = w1.getIndexForNode(n1);
+          wrap(ds, n1, n2, w1.findPreviouseNodeForIndex(i1), w1.findNextNodeForIndex(i1), w, w1);
+          
+          i1 = w2.getIndexForNode(n1);
+          wrap(ds, n1, n2, w2.findPreviouseNodeForIndex(i1), w2.findNextNodeForIndex(i1), w, w2);
+          
+          ds.addSelected(w.way, n1, n2);
+          
+          if(detachLength != null) {
+            ds.addSelected(detachLength);
+          }
+          
+          detachAction.actionPerformed(null);
+        }
+      }
+    }
+    
+    private void wrap(DataSet ds, Node n1, Node n2, Node prev, Node next, WayExt w, WayExt w1) {
+      if(n2 == next) {
+        ds.addSelected(prev);
+      }
+      else {
+        ds.addSelected(next);
+      }
+      
+      ds.addSelected(n1, n2, w1.way, w.way);
+      
+      wrapAroundWay.actionPerformed(null);
+      
+      ds.clearSelection();
+
+    }
+
+    @Override
+    protected void updateEnabledState() {
+        updateEnabledStateOnCurrentSelection();
+    }
+    
+    @Override
+    protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
+        if (selection == null) {
+            setEnabled(false);
+            return;
+        }
+        setEnabled(Conf.isDetachEnabled() && checkSelection(selection));
+    }
+    
+    private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
+      if(splitObjectAction == null || !Conf.isClearRoadAreEnabled()) {
+        return false;
+      }
+      
+      boolean result = false;
+      
+      Node n1 = null;
+      Node n2 = null;
+      
+      if(selection.size() == 2 || selection.size() == 3) {
+        for(OsmPrimitive p : selection) {
+          if(p instanceof Node) {
+            if(n1 == null) {
+              n1 = (Node)p;
+            }
+            else {
+              n2 = (Node)p;
+            }
+          }
+          else if(p instanceof Way && (p.getNumKeys() > 0 || ((Way)p).getLength() >= 10)) {
+            return false;
+          }
+        }
+        
+        if(n1 != null && n2 != null) {
+          Node test = n2;
+          
+          result = n1.referrers(Way.class).filter(way -> way.containsNode(test) && way.hasKey("highway")).findAny().isPresent();
+        }
+      }
+      
+      return result;
+    }
+  }
+  
+  class DetachLengthAction extends JosmAction {
+    public DetachLengthAction() {
+      super(tr("Set detach length"), /* ICON() */ "preferences/detach", tr("Set the detach length for the detach action"),
+          Shortcut.registerShortcut("kindahackedinutils.setdetachlength", tr("Set detach length"), KeyEvent.VK_Z, Shortcut.ALT_CTRL_SHIFT), false);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      Conf.setValue(Conf.DETACH_LENGTH, WayExt.getDetachLength(MainApplication.getLayerManager().getEditDataSet().getSelectedWays().stream().findAny().get(), true));
+    }
+    
+    @Override
+    protected void updateEnabledState() {
+        updateEnabledStateOnCurrentSelection();
+    }
+    
+    @Override
+    protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
+        if (selection == null) {
+            setEnabled(false);
+            return;
+        }
+        setEnabled(Conf.isDetachEnabled() && checkSelection(selection));
+    }
+    
+    private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
+      return selection.size() == 1 && selection.stream().filter(p -> p instanceof Way && p.getNumKeys() == 0 && ((Way)p).getRealNodesCount() == 2 && ((Way)p).getLength() < 10).findAny().isPresent();
+    }
+  }
+  
   class DetachAction extends JosmAction {
     public DetachAction() {
       super(tr("Detach nodes from ways and move them"), /* ICON() */ "preferences/detach", tr("Detach nodes from ways and move them"),
-          Shortcut.registerShortcut("kindahackedinutils.detach", tr("Detatch nodes"), KeyEvent.VK_Z, Shortcut.DIRECT), false);
+          Shortcut.registerShortcut("kindahackedinutils.detach", tr("Detach nodes"), KeyEvent.VK_Z, Shortcut.DIRECT), false);
     }
     
     @Override
     public void actionPerformed(ActionEvent e) {
       final DataSet ds = MainApplication.getLayerManager().getEditDataSet();
       
-      Collection<Way> selectedWays = ds.getSelectedWays();
+      Collection<Way> ways = ds.getSelectedWays();
+      Collection<Node> selectedNodes = ds.getSelectedNodes();
       
       LinkedList<Command> cmds = new LinkedList<>();
       Hashtable<Node,LinkedList<Node>> replacement = new Hashtable<>();
       Hashtable<Way,LinkedList<NodePair>> newNodesTable = new Hashtable<>();
       HashSet<Node> replaceNodeSet = new HashSet<>();
+      LinkedList<Way> selectedWays = new LinkedList<>();
+      
+      double detachLength = Conf.getDetachLength();
+      
+      for(Way w : ways) {
+        if(w.getNumKeys() == 0) {
+          detachLength = WayExt.getDetachLength(w, true);
+        }
+        else {
+          selectedWays.add(w);
+        }
+      }
       
       for(Way w : selectedWays) {
-        if(w.isOutsideDownloadArea() && JOptionPane.YES_OPTION != JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("The selected way lies outside the download area.\nThis might result in different detachments.\n\nDo you want to continue anyway?"), tr("Way outside of download area"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)) {
+        if(((selectedNodes.size() != 2 && w.isOutsideDownloadArea()) || !(selectedNodes.size() == 2 && !selectedNodes.toArray(new Node[2])[0].isOutsideDownloadArea() && !selectedNodes.toArray(new Node[2])[1].isOutsideDownloadArea())) && JOptionPane.YES_OPTION != JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("The selected way lies outside the download area.\nThis might result in different detachments.\n\nDo you want to continue anyway?"), tr("Way outside of download area"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)) {
           return;
+        }
+        
+        int i1 = 0;
+        int i2 = w.getNodesCount();
+        
+        WayExt wayExt = new WayExt(w, detachLength);
+        
+        if(selectedNodes.size() == 2) {
+          i1 = wayExt.getIndexForNode(selectedNodes.toArray(new Node[2])[0]);
+          i2 = wayExt.getIndexForNode(selectedNodes.toArray(new Node[2])[1])+1;
         }
         
         if(w.isClosed()) {
@@ -1347,9 +1584,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           
           HashSet<Node> removeNodes1 = new HashSet<>();
           
-          WayExt wayExt = new WayExt(w);
-          
-          for(int i = 0; i < w.getNodesCount()-1; i++) {
+          for(int i = i1; i < i2-1; i++) {
             final Node n = w.getNode(i);
             final AtomicBoolean nodeHandled = new AtomicBoolean();
             
@@ -1383,7 +1618,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           }
         }
         else {
-          for(int i = 0; i < w.getNodesCount(); i++) {
+          for(int i = i1; i < i2; i++) {
             final Node cur = w.getNode(i);
             
             Iterator<Way> it = cur.referrers(Way.class).iterator();
@@ -1392,7 +1627,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               Way w2 = it.next();
               
               if(w != w2) {
-                WayExt way = new WayExt(w2); 
+                WayExt way = new WayExt(w2, detachLength); 
                 
                 boolean isMultipolygon = way.way.referrers(Relation.class).anyMatch(Relation::isMultipolygon);
                 
@@ -1513,7 +1748,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         if(extWays.length == 1) {          
           double angle = calculateDirection(toCheck.getEastNorth(), cur.getEastNorth());
           
-          EastNorth m = WayExt.calculateMove(angle, 6);
+          EastNorth m = WayExt.calculateMove(angle, way.detachLength/2);
           extNewNode = new Node(cur.getEastNorth().add(m));
           
           boolean found = false;
@@ -1555,16 +1790,31 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
     
     private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
-      boolean result = false;
+      Node n1 = null;
+      Node n2 = null;
+      Way w = null;
       
       for (OsmPrimitive p : selection) {
-        if (p instanceof Way) {
-            result = true;
+        if(p instanceof Node) {
+          if(n1 == null) {
+            n1 = (Node)p;
+          }
+          else if(n2 == null) {
+            n2 = (Node)p;
+          }
+          else {
+            w = null;
             break;
+          }
+        }
+        else if (p instanceof Way) {
+          if(w == null) {
+            w = (Way)p;
+          }
         }
       }
       
-      return result;
+      return w != null && ((n1 == null || w.containsNode(n1)) && (n2 == null || w.containsNode(n2)));
     }
   }
   
@@ -2163,7 +2413,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   key = "camera:direction";
                 }
                 else if(n.hasKey("traffic_sign") && Config.getPref().getBoolean("kindahackedinutils.angleInfoNotShown", true)) {
-                  JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it''s effect is.\nFor example if a street's direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
+                  JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Note that the direction for a traffic sign is opposite of the direction it''s effect is.\nFor example if a street''s direction is in 45° forward and a speed limit sign is placed besides this street in forward direction it is mapped with a direction of 225.\nIf natural direction is enabled for traffic signs you can just point the mouse behind the traffic sign in the direction of the street to get the correct mapping."));
                   Config.getPref().putBoolean("kindahackedinutils.angleInfoNotShown", false);
                 }
                 
@@ -3300,9 +3550,15 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private static final class WayExt {
     public Way way;
     public LinkedList<EastNorth> addList;
+    public double detachLength;
     
     public WayExt(Way way) {
+      this(way, Conf.getDetachLength());
+    }
+    
+    public WayExt(Way way, double detachLength) {
       this.way = way;
+      this.detachLength = detachLength;
       addList = new LinkedList<>();
       calculateAngles();
     }
@@ -3465,7 +3721,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           angle -= 360;
         }
         
-        double length = 6;
+        double length = detachLength/2;
         
         if(alpha != -1) {
           if(alpha > 90) {
@@ -3477,7 +3733,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         
         // Too far away, fall back to default
         if(length > 24) {
-          length = 6;
+          length = detachLength/2;
         }
         
         EastNorth add = calculateMove(angle, length);
@@ -3546,6 +3802,27 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     
     public boolean isHighway() {
       return way.hasKey("highway");
+    }
+    
+    public static double getDetachLength(Way w, boolean delete) {
+      Node n1 = w.getNode(0);
+      Node n2 = w.getNode(1);
+      
+      double length = n1.getEastNorth().distance(n2.getEastNorth());
+      
+      if(delete) {
+        w.setDeleted(true);
+        
+        if(n1.getReferrers().size() == 0) {
+          n1.setDeleted(true);
+        }
+        
+        if(n2.getReferrers().size() == 0) {
+          n2.setDeleted(true);
+        }
+      }
+      
+      return length;
     }
   }
   
