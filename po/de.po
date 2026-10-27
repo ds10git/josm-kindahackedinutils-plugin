@@ -517,3 +517,10 @@ msgstr "Feld"
 
 msgid "scrub"
 msgstr "Buschland"
+
+msgid "no_exit"
+msgstr "Ausfahrt verboten"
+
+msgid "no_entry"
+msgstr "Einfahrt verboten"
+

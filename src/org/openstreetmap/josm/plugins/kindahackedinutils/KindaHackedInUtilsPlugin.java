@@ -191,6 +191,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   
   private static final LinkedList<String> TURN_RESTRICTION = 
       Stream.of(
+          "no_entry",
+          "no_exit",
           "no_right_turn",
           "no_left_turn",
           "no_straight_on",
@@ -229,17 +231,17 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private PreferenceChangedListener prefClearRoadAreaListener;
   
   private ChangeListener cl = new ChangeListener() {
-    private OsmPrimitveMenuItem lastItem;
+    private OsmPrimitiveMenuItem lastItem;
     
     @Override
     public void stateChanged(ChangeEvent e) {
-      if(e.getSource() instanceof OsmPrimitveMenuItem) {
+      if(e.getSource() instanceof OsmPrimitiveMenuItem) {
         if(Objects.equals(lastItem, e.getSource())) {
           lastItem.setHighlighted(false);
           lastItem = null;
         }
         else {
-          lastItem = (OsmPrimitveMenuItem)e.getSource();
+          lastItem = (OsmPrimitiveMenuItem)e.getSource();
           lastItem.setHighlighted(true);
         }
       }
@@ -399,6 +401,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         
         closeWays.updateEnabledState();
+        updateToolbarPresetButtonsEnabledState(false);
       }
     };
     
@@ -847,7 +850,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           ActionListener a = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-              if(e.getSource() instanceof OsmPrimitveMenuItem) {
+              if(e.getSource() instanceof OsmPrimitiveMenuItem) {
                 final HashSet<Command> cmds = new HashSet<>(2);
                 String key = "direction";
                 
@@ -855,13 +858,13 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   key = "traffic_sign:direction";
                 }
                 
-                cmds.add(new ChangePropertyCommand(n, key, ((OsmPrimitveMenuItem)e.getSource()).getText()));
+                cmds.add(new ChangePropertyCommand(n, key, ((OsmPrimitiveMenuItem)e.getSource()).getText()));
                 DirectionKeyCommands.addRemoveCommandsToList(key, n, cmds);
                 
                 UndoRedoHandler.getInstance().add(new SequenceCommand("Change direction value", cmds));
                 closePopupMenuIfVisible();
                 
-                ((OsmPrimitveMenuItem)e.getSource()).setHighlighted(false);
+                ((OsmPrimitiveMenuItem)e.getSource()).setHighlighted(false);
                 
                  if(wayPointedAt != null) {
                     SwingUtilities.invokeLater(() -> wayPointedAt.setHighlighted(true));
@@ -905,7 +908,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                   int d1 = calculateDirection(next.getEastNorth(), n.getEastNorth());
                   int d2 = calculateDirection(prev.getEastNorth(), n.getEastNorth());
                   
-                  OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(w, d1, arrow, "moddleNode");
+                  OsmPrimitiveMenuItem item = new OsmPrimitiveMenuItem(w, d1, arrow, "moddleNode");
                   item.waySegment = new WaySegment(w, i);
                   item.addActionListener(a);
                   item.addChangeListener(cl);
@@ -918,7 +921,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
                     return true;
                   }
                   
-                  item = new OsmPrimitveMenuItem(w, d2, arrow, nodePos);
+                  item = new OsmPrimitiveMenuItem(w, d2, arrow, nodePos);
                   item.waySegment = new WaySegment(w, i-1);
                   item.addActionListener(a);
                   item.addChangeListener(cl);
@@ -939,7 +942,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               
               lastNodePos = nodePos;
               
-              OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(w, d, arrow, nodePos);
+              OsmPrimitiveMenuItem item = new OsmPrimitiveMenuItem(w, d, arrow, nodePos);
               item.addActionListener(a);
               item.addChangeListener(cl);
               
@@ -954,7 +957,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           
           if(highways.size() == 2 && sameDirection && (Objects.equals(direction, "forward") || Objects.equals(direction, "backward"))) {
             for(int i = 0; i < 2; i++) {
-              OsmPrimitveMenuItem item = (OsmPrimitveMenuItem)menu.getComponent(i);
+              OsmPrimitiveMenuItem item = (OsmPrimitiveMenuItem)menu.getComponent(i);
                  
               if(autoSet && (Objects.equals(direction, "forward") && Objects.equals(item.nodePos, "firstNode")) ||
                   (Objects.equals(direction, "backward") && Objects.equals(item.nodePos, "lastNode"))) {
@@ -1095,9 +1098,21 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       
       final Collection<TaggingPreset> presets = TaggingPresets.getMatchingPresets(EnumSet.of(TaggingPresetType.forPrimitive((Relation)selection.get(0))), ((Relation)selection.get(0)).getKeys(), false);
       
+      final AtomicReference<String> name = new AtomicReference<>(((Relation)selection.get(0)).get("name"));
+      final List<OsmPrimitive> noName = new LinkedList<>();
+      final List<Command> cmds = new LinkedList<>();
+      
       for(int i = 1; i < selection.size(); i++) {
         final Set<String> roles = findSuggestedRoles(presets, selection.get(i));
         final RelationMember member = new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", selection.get(i));
+        
+        if(name.get() == null && selection.get(i).get("name") != null) {
+          name.set(selection.get(i).get("name"));
+        }
+        
+        if(selection.get(i).get("name") == null && (Objects.equals(member.getRole(), "stop") || Objects.equals(member.getRole(), "platform"))) {
+          noName.add(selection.get(i));
+        }
         
         if(!members.contains(selection.get(i))) {
           newMembers.add(member);
@@ -1117,7 +1132,16 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       }
       
       if(members.size() != newMembers.size()) {
-        UndoRedoHandler.getInstance().add(new SequenceCommand("change relation", List.of(new ChangeMembersCommand((Relation)selection.get(0), newMembers), new SelectCommand(OsmDataManager.getInstance().getActiveDataSet(), selection))));
+        if(name.get() != null) {
+          for(OsmPrimitive p : noName) {
+            cmds.add(new ChangePropertyCommand(p, "name", name.get()));
+          }
+        }
+        
+        cmds.add(new ChangeMembersCommand((Relation)selection.get(0), newMembers));
+        cmds.add(new SelectCommand(OsmDataManager.getInstance().getActiveDataSet(), selection));
+        
+        UndoRedoHandler.getInstance().add(new SequenceCommand("change relation", cmds));
       }
     }
     
@@ -1561,7 +1585,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
       }
       
-      for(Way w : selectedWays) {
+      for(Way w : selectedWays) {        
         if(((selectedNodes.size() != 2 && w.isOutsideDownloadArea()) || !(selectedNodes.size() == 2 && !selectedNodes.toArray(new Node[2])[0].isOutsideDownloadArea() && !selectedNodes.toArray(new Node[2])[1].isOutsideDownloadArea())) && JOptionPane.YES_OPTION != JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("The selected way lies outside the download area.\nThis might result in different detachments.\n\nDo you want to continue anyway?"), tr("Way outside of download area"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)) {
           return;
         }
@@ -2517,7 +2541,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       ActionListener b = new ActionListener() {
         @Override
         public void actionPerformed(ActionEvent e) {
-          ((OsmPrimitveMenuItem)e.getSource()).changeTags();
+          ((OsmPrimitiveMenuItem)e.getSource()).changeTags();
         }
       };
       
@@ -2531,7 +2555,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         if(lastTitle == null || !Objects.equals(name, lastTitle)) {
           if(!current.isEmpty() && current.size() > 1) {
             @SuppressWarnings("unchecked")
-            OsmPrimitveMenuItem item = new OsmPrimitveMenuItem((HashSet<OsmPrimitive>)current.clone(), a, arrow, "");
+            OsmPrimitiveMenuItem item = new OsmPrimitiveMenuItem((HashSet<OsmPrimitive>)current.clone(), a, arrow, "");
             
             item.setText(DirectionTagMap.getPluralForSingular(lastTitle));
             item.setName(angle);
@@ -2557,7 +2581,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         
         lastTitle = name;
          
-        OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(waysToHandleList.get(i), a, arrow, "");
+        OsmPrimitiveMenuItem item = new OsmPrimitiveMenuItem(waysToHandleList.get(i), a, arrow, "");
         
         item.setText(name.replace("{0}", String.valueOf(current.size())));
         item.setName(angle);
@@ -2568,7 +2592,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       }
       
       if(!current.isEmpty() && current.size() > 1) {
-        OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(current, a, arrow, "");
+        OsmPrimitiveMenuItem item = new OsmPrimitiveMenuItem(current, a, arrow, "");
         
         item.setText(DirectionTagMap.getPluralForSingular(lastTitle));
         item.setName(angle);
@@ -2581,7 +2605,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       if(showAll) {
         menu.addSeparator();
         
-        OsmPrimitveMenuItem item = new OsmPrimitveMenuItem(waysToHandleList, a, arrow, "");
+        OsmPrimitiveMenuItem item = new OsmPrimitiveMenuItem(waysToHandleList, a, arrow, "");
         
         item.setText(tr("{0} for all objects", angle));
         item.setName(angle);
@@ -3337,14 +3361,17 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     @Override
     public void actionPerformed(ActionEvent e) {
       if(Conf.isWrapAroundEnabled()) {
+        List<Command> cmds = new LinkedList<>();
         DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
         
         Way w0 = ds.getSelectedWays().stream().toList().get(0);
         Way w1 = ds.getSelectedWays().stream().toList().get(1);
         
-        Node np = ds.getSelectedNodes().stream().toList().get(0);
-        Node n0 = ds.getSelectedNodes().stream().toList().get(1);
-        Node n1 = ds.getSelectedNodes().stream().toList().get(2);
+        List<Node> nodes = ds.getSelectedNodes().stream().toList();
+        
+        Node np = nodes.get(0);
+        Node n0 = nodes.get(1);
+        Node n1 = nodes.get(2);
         
         int index0 = -1;
         int index1 = -1;
@@ -3361,10 +3388,55 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             index2 = i;
           }
         }
-        
+         
         boolean forward = (index0 < index1 && index1 < index2 && index0 < index2) || 
-            ((index0 > index1 && index1 < index2) || (index0 < index1 && index1 > index2)) && index0 > index2;
-              
+                ((index0 > index1 && index1 < index2) || (index0 < index1 && index1 > index2)) && index0 > index2;
+    
+        List<OsmPrimitive> between = new LinkedList<>();
+        
+        if(forward) {
+          if(index2 > index1) {
+            for(int i = index1+1; i < index2; i++) {
+              between.add(w0.getNode(i));
+            }
+          }
+          else if(index2 < index1) {
+            for(int i = index1+1; i < w0.getRealNodesCount(); i++) {
+              between.add(w0.getNode(i));
+            }
+            for(int i = 0; i < index2; i++) {
+              between.add(w0.getNode(i));
+            }
+          }
+        }
+        else {
+          if(index1 > index2) {
+            for(int i = index1-1; i > index2; i--) {
+              between.add(w0.getNode(i));
+            }
+          }
+          else if(index2 > index1) {
+            for(int i = index1-1; i >= 0; i--) {
+              between.add(w0.getNode(i));
+            }
+            for(int i = w0.getRealNodesCount()-1; i > index2; i--) {
+              between.add(w0.getNode(i));
+            }
+          }
+        }
+        
+        if(!between.isEmpty()) {
+          index2 = w0.getNodes().indexOf(between.get(0));
+          
+          for(OsmPrimitive n : between) {
+            List<OsmPrimitive> list = n.getReferrers();
+            
+            if(list.size() == 1 && Objects.equals(w0, list.get(0))) {
+              cmds.add(new DeleteCommand(n));
+            }
+          }
+        }
+            
         int firstIndex = -1;
         int lastIndex = -1;
         
@@ -3416,7 +3488,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           List<Node> newNodeList = new LinkedList<>();
           
           for(int i = 0; i < w0.getRealNodesCount(); i++) {
-            newNodeList.add(w0.getNode(i));
+            if(!between.contains(w0.getNode(i))) {
+              newNodeList.add(w0.getNode(i));
+            }
             
             if(forward && n0 == w0.getNode(i)) {
               for(Node n : insertNodes) {
@@ -3434,7 +3508,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
             newNodeList.add(newNodeList.get(0));
           }
           
-          UndoRedoHandler.getInstance().add(new SequenceCommand("wrap line around", List.of(new ChangeNodesCommand(ds, w0, newNodeList), new SelectCommand(ds, Collections.singleton(w0)))));
+          cmds.add(0, new ChangeNodesCommand(ds, w0, newNodeList));
+          cmds.add(new SelectCommand(ds, Collections.singleton(w0)));
+          
+          UndoRedoHandler.getInstance().add(new SequenceCommand("wrap line around", cmds));
         }
       }
     }
@@ -3452,40 +3529,27 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         setEnabled(Conf.isWrapAroundEnabled() && checkSelection(selection));
     }
+        
+    private boolean acceptableNodes(Way w, List<? extends OsmPrimitive> nodes) {
+      List<Node> wayNodes = w.getNodes();
+      
+      int i0 = wayNodes.indexOf(nodes.get(0));
+      int i1 = wayNodes.indexOf(nodes.get(1));
+      int i2 = wayNodes.indexOf(nodes.get(2));
+      
+      return (i0+1 == i1 && (w.isClosed() || i1 < i2) || i0-1 == i1 && (w.isClosed() || i2 < i1) || (w.isClosed() && (i0 > i1 && i1 == 0 || i0 < i1 && i0 == 0))) && w.getNodes().containsAll(nodes); 
+    }
     
     private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
       boolean result = false;
       
-      
-      List<? extends OsmPrimitive> ways = selection.stream().filter(p -> p instanceof Way).toList();
       List<? extends OsmPrimitive> nodes = selection.stream().filter(p -> p instanceof Node).toList();
+
+      if(nodes.size() == 3) {
+        List<? extends OsmPrimitive> ways = selection.stream().filter(p -> p instanceof Way && ((Way)p).containsNode((Node)nodes.get(1)) && ((Way)p).containsNode((Node)nodes.get(2))).toList();
       
-      if(nodes.size() == 3 && ways.size() == 2) {
-        List<Way> ways0 = nodes.get(0).referrers(Way.class).toList();
-        List<Way> ways1 = nodes.get(1).referrers(Way.class).toList();
-        
-        result = ways0.stream().anyMatch(p -> ways.contains(p) && ((Way)p).containsNode((Node)nodes.get(0)) && ((Way)p).containsNode((Node)nodes.get(1))) &&
-            ways1.stream().anyMatch(p -> ways.contains(p) && ((Way)p).containsNode((Node)nodes.get(0)) && ((Way)p).containsNode((Node)nodes.get(1)));
-        
-        if(result) {
-          int index0 = -1;
-          int index1 = -1;
-          
-          Way w = (Way)ways.get(0);
-          
-          for(int i = 0; i < w.getRealNodesCount(); i++) {
-            if(w.getNode(i) == nodes.get(1)) {
-              index0 = i;
-            }
-            else if(w.getNode(i) == nodes.get(2)) {
-              index1 = i;
-            }
-          }
-          
-          result = Math.abs(index0-index1) == 1 || w.isClosed() && (index0 == w.getRealNodesCount()-1 && index1 == 0 || index1 == w.getRealNodesCount()-1 && index0 == 0);
-        }
+        result = ways.size() == 2 && acceptableNodes((Way)ways.get(0), nodes);
       }
-      
       return result;
     }
   }
@@ -3722,7 +3786,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         }
         
         double length = detachLength/2;
-        
+                
         if(alpha != -1) {
           if(alpha > 90) {
             alpha -= 90;
@@ -3854,12 +3918,12 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
   }
   
-  private static final class OsmPrimitveMenuItem extends JMenuItem {
+  private static final class OsmPrimitiveMenuItem extends JMenuItem {
     private Collection<OsmPrimitive> osmPrimitives;
     private WaySegment waySegment;
     private String nodePos;
     
-    public OsmPrimitveMenuItem(Collection<OsmPrimitive> ways, int heading, ImageIcon arrow, String nodePos) {
+    public OsmPrimitiveMenuItem(Collection<OsmPrimitive> ways, int heading, ImageIcon arrow, String nodePos) {
       this.osmPrimitives = ways;
       this.nodePos = nodePos;
       
@@ -3870,7 +3934,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       }
     }
     
-    public OsmPrimitveMenuItem(OsmPrimitive way, int heading, ImageIcon arrow, String nodePos) {
+    public OsmPrimitiveMenuItem(OsmPrimitive way, int heading, ImageIcon arrow, String nodePos) {
       this(Collections.singleton(way), heading, arrow, nodePos);
     }
     
@@ -3923,7 +3987,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     public TurnRestrictionDialog() {
       super(MainApplication.getMainFrame(), tr("Turn restriction type"), new String[] {tr("OK"), tr("Cancel")}, true /* modal */);
       setRememberWindowGeometry(TurnRestrictionDialog.class.getName() + ".geometry",
-          WindowGeometry.centerInWindow(MainApplication.getMainFrame(), new Dimension(630, 330)));
+          WindowGeometry.centerInWindow(MainApplication.getMainFrame(), new Dimension(630, 400)));
       setButtonIcons("ok", "cancel");
       
       restrictionType = new JList<>(TURN_RESTRICTION.toArray(new String[0]));
@@ -3965,7 +4029,14 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           
           JLabel l = (JLabel)super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
           l.setText(tr(v));
-          ImageIcon i = ImageProvider.get("presets/vehicle/restriction/turn_restrictions", (v.startsWith("no_") && !v.equals("no_u_turn") ? v +"_red" : v) +".svg", ImageSizes.CURSOR);
+          ImageIcon i = null;
+          
+          if(v.equals("no_exit") || v.equals("no_entry")) {
+            i = ImageProvider.get(v, ImageSizes.CURSOR);
+          }
+          else {
+            i = ImageProvider.get("presets/vehicle/restriction/turn_restrictions", (v.startsWith("no_") && !v.equals("no_u_turn") ? v +"_red" : v) +".svg", ImageSizes.CURSOR);
+          }
           
           if(i != null) {
             l.setIcon(i);
@@ -4072,7 +4143,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
           }
         }
         
-        if(nodes.isEmpty() && ways.size() == 2) {
+        if(nodes.isEmpty() && ways.size() >= 2) {
           Node nF = ways.get(0).getNode(0);
           Node nL = ways.get(0).getNode(ways.get(0).getNodesCount()-1);
           
@@ -4119,10 +4190,10 @@ public class KindaHackedInUtilsPlugin extends Plugin {
         
         if(!existing) {
           for(int i = 0; i < primitives.size(); i++) {
-            if(i == 0) {
-              from.add(primitives.get(0));
+            if(i == 0 || (ways.size() > 2 && i > 1 && (i < primitives.size() - 1) && Objects.equals("no_entry", restrictionType.getSelectedValue()))) {
+              from.add(primitives.get(i));
             }
-            else if(i == primitives.size()-1) {
+            else if(i == primitives.size()-1 || (ways.size() > 2 && i > 1 && Objects.equals("no_exit", restrictionType.getSelectedValue()))) {
               to.add(primitives.get(i));
             }
             else {
