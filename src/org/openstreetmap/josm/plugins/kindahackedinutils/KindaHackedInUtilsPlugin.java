@@ -187,6 +187,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   private static final String ACTION_NAME_ADD_TO_RELATION_ALTERNATIVE = "CTRL+SHIFT+R_ALTERNATIVE";
   private static final AbstractProperty<Color> RUBBER_LINE_COLOR = PaintColors.SELECTED.getProperty().getChildColor(marktr("helper line"));
   private static final CachingProperty<BasicStroke> RUBBER_LINE_STROKE = new StrokeProperty("draw.stroke.helper-line", "3").cached();
+  private static final int MAX_DETACH_LENGTH = 30;
   private NamedColorProperty coneColor = new NamedColorProperty(tr("KindaHackedInUtils: Direction cone color"), new Color(0xFF,0,0,0x78));
   
   private static final LinkedList<String> TURN_RESTRICTION = 
@@ -703,9 +704,9 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       findSplitObject(MainApplication.getMenu().moreToolsMenu);
     }
      
-    if(oldFrame != null) {
+    if(oldFrame != null && dialog != null) {
       oldFrame.getActionMap().remove("kindahackedinutils.addHeading");
-      oldFrame.removeToggleDialog(dialog);
+      //oldFrame.removeToggleDialog(dialog);
       dialog = null;
     }  
     
@@ -1509,7 +1510,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
               n2 = (Node)p;
             }
           }
-          else if(p instanceof Way && (p.getNumKeys() > 0 || ((Way)p).getLength() >= 10)) {
+          else if(p instanceof Way && (p.getNumKeys() > 0 || ((Way)p).getLength() >= MAX_DETACH_LENGTH)) {
             return false;
           }
         }
@@ -1528,7 +1529,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
   class DetachLengthAction extends JosmAction {
     public DetachLengthAction() {
       super(tr("Set detach length"), /* ICON() */ "preferences/detach", tr("Set the detach length for the detach action"),
-          Shortcut.registerShortcut("kindahackedinutils.setdetachlength", tr("Set detach length"), KeyEvent.VK_Z, Shortcut.ALT_CTRL_SHIFT), false);
+          Shortcut.registerShortcut("kindahackedinutils.setdetachlength", tr("Set detach length"), KeyEvent.VK_L, Shortcut.ALT_CTRL_SHIFT), false);
     }
 
     @Override
@@ -1551,7 +1552,7 @@ public class KindaHackedInUtilsPlugin extends Plugin {
     }
     
     private boolean checkSelection(Collection<? extends OsmPrimitive> selection) {
-      return selection.size() == 1 && selection.stream().filter(p -> p instanceof Way && p.getNumKeys() == 0 && ((Way)p).getRealNodesCount() == 2 && ((Way)p).getLength() < 10).findAny().isPresent();
+      return selection.size() == 1 && selection.stream().filter(p -> p instanceof Way && p.getNumKeys() == 0 && ((Way)p).getRealNodesCount() == 2 && ((Way)p).getLength() < MAX_DETACH_LENGTH).findAny().isPresent();
     }
   }
   
@@ -1586,7 +1587,8 @@ public class KindaHackedInUtilsPlugin extends Plugin {
       }
       
       for(Way w : selectedWays) {        
-        if(((selectedNodes.size() != 2 && w.isOutsideDownloadArea()) || !(selectedNodes.size() == 2 && !selectedNodes.toArray(new Node[2])[0].isOutsideDownloadArea() && !selectedNodes.toArray(new Node[2])[1].isOutsideDownloadArea())) && JOptionPane.YES_OPTION != JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("The selected way lies outside the download area.\nThis might result in different detachments.\n\nDo you want to continue anyway?"), tr("Way outside of download area"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)) {
+        if(((selectedNodes.size() != 2 && w.isOutsideDownloadArea()) || 
+            (selectedNodes.size() == 2 && (selectedNodes.toArray(new Node[2])[0].isOutsideDownloadArea() || selectedNodes.toArray(new Node[2])[1].isOutsideDownloadArea()))) && JOptionPane.YES_OPTION != JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("The selected way lies outside the download area.\nThis might result in different detachments.\n\nDo you want to continue anyway?"), tr("Way outside of download area"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)) {
           return;
         }
         
